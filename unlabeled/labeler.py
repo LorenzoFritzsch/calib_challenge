@@ -96,12 +96,13 @@ def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
 
     return dataset_x, dataset_y
 
-
+"""
 def truncate(val):
     if math.isnan(val) or math.isinf(val):
         return val
     k = 10
     return int(val * k) / k
+"""
 
 def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     q_one = m_one * c_one - d_one
@@ -119,7 +120,7 @@ def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
 
     x_center = abs(x_det / determinant)
     y_center = abs(y_det / determinant)
-    return truncate(x_center), truncate(y_center)
+    return x_center, y_center
 
 def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch):
     focal_length_pixel = 910
