@@ -13,12 +13,6 @@ def segment_length(xa, ya, xb, yb):
 def apply_gaussian_filter(old_gray, gray):
     old_gray_blurred = cv2.GaussianBlur(old_gray, (5, 5), 0)
     gray_blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-    """
-    old_gray_gauss_filter = cv2.subtract(old_gray, old_gray_blurred)
-    gray_gauss_filter = cv2.subtract(gray, gray_blurred)
-    return old_gray_gauss_filter, gray_gauss_filter
-    """
     return old_gray_blurred, gray_blurred
 
 def bilateral_filter(old_gray, gray):
@@ -44,14 +38,88 @@ def standardize(to_standardize, dataset):
     print("To standardize: " + str(to_standardize) + " Standardized: " + str(standardized))
     return standardized
 
-def clear_dataset(dataset, show_standard_deviation=False):
-    dataset_standard_dev = get_standard_deviation(dataset)
-    if show_standard_deviation:
-        print("Standard deviation of dataset: " + str(dataset_standard_dev))
-    for data in dataset:
-        if data > dataset_standard_dev:
-            dataset.remove(data)
+def clear_dataset(dataset_x, dataset_y, max_x, max_y):
+    x_without_nan_inf = remove_nan_or_inf_values_from_dataset(dataset_x)
+    y_without_nan_inf = remove_nan_or_inf_values_from_dataset(dataset_y)
+
+    x_in_bound, y_in_bound = remove_val_outside_bound(x_without_nan_inf, y_without_nan_inf, max_x, max_y)
+
+    x_inside_standard_dev, y_inside_standard_dev = remove_val_outside_standard_dev(x_in_bound, y_in_bound)
+
+    return x_inside_standard_dev, y_inside_standard_dev
+
+
+def remove_nan_or_inf_values_from_dataset(dataset):
+    for value in dataset:
+        if math.isnan(value) or math.isinf(value):
+            dataset.remove(value)
     return dataset
+
+def remove_val_outside_standard_dev(dataset_x, dataset_y):
+
+    standard_dev_x = get_standard_deviation(dataset_x)
+    standard_dev_y = get_standard_deviation(dataset_y)
+
+    len_dataset_x = len(dataset_x)
+    i = 0
+
+    while i in range(len_dataset_x):
+
+        x = dataset_x[i]
+        y = dataset_y[i]
+
+        if x >= standard_dev_x or y >= standard_dev_y:
+            dataset_x.pop(i)
+            dataset_y.pop(i)
+
+        i += 1
+        len_dataset_x = len(dataset_x)
+
+    return dataset_x, dataset_y
+
+def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
+
+    len_dataset_x = len(dataset_x)
+    i = 0
+
+    while i in range(len_dataset_x):
+
+        x = dataset_x[i]
+        y = dataset_y[i]
+
+        if x > max_x or y > max_y:
+            dataset_x.pop(i)
+            dataset_y.pop(i)
+
+        i += 1
+        len_dataset_x = len(dataset_x)
+
+    return dataset_x, dataset_y
+
+
+def truncate(val):
+    if math.isnan(val) or math.isinf(val):
+        return val
+    k = 10
+    return int(val * k) / k
+
+def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
+    q_one = m_one * c_one - d_one
+    q_two = m_two * c_two - d_two
+
+    matrix_determinant = [[m_one, 1], [m_two, 1]]
+    matrix_x = [[q_one, 1], [q_two, 1]]
+    matrix_y = [[m_one, q_one], [m_two, q_two]]
+
+    #print(matrix_determinant, matrix_x, matrix_y)
+
+    determinant = np.linalg.det(matrix_determinant)
+    x_det = np.linalg.det(matrix_x)
+    y_det = np.linalg.det(matrix_y)
+
+    x_center = abs(x_det / determinant)
+    y_center = abs(y_det / determinant)
+    return truncate(x_center), truncate(y_center)
 
 def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, generation):
     focal_length_pixel = 910
@@ -81,8 +149,6 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
 
     while video_captured.isOpened():
 
-        #print("Frame: " + str(round) + " Lost frames: " + str(lost_frames) + "\033[93m Frames with errors: " + str(frames_with_errors) + "\033[0m")
-
         sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Generation: %r" % generation + "\033[0m")
         sys.stdout.flush()
 
@@ -109,110 +175,48 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
             good_new = p1[st == 1]
             good_old = p0[st == 1]
 
-            local_coords_a_positive = []
-            local_coords_b_positive = []
-            local_coords_c_positive = []
-            local_coords_d_positive = []
+            local_coords_x = []
+            local_coords_y = []
 
-            local_coords_a_negative = []
-            local_coords_b_negative = []
-            local_coords_c_negative = []
-            local_coords_d_negative = []
+            prev_m = None
+            prev_c = None
+            prev_d = None
 
             for i, (new, old) in enumerate(zip(good_new, good_old)):
 
                 a, b = new.ravel()
                 c, d = old.ravel()
 
-
                 m = 0
                 if a != c:
                     m = (d - b)/(c - a)
-
                 else:
                     continue
-
-                """
-                m_angulus = math.atan(m) * 180 / math.pi
-                if abs(m_angulus) >= 70 or abs(m_angulus) <= 5:
-                    continue
-                """
 
                 if b > car_area[0][1] or d > car_area[1][1]:
                     continue
 
-                #print(abs(m_angulus))
+                if prev_m == None:
+                    prev_m = m
+                    prev_c = c
+                    prev_d = d
 
-                #Calculate actual distance of the point, if too far ignore it, probably wrong.
-
-                # raw_angular_coefficients.append(m)
-                # Better data management
-                if m > 0:
-                    local_coords_a_positive.append(int(a))
-                    local_coords_b_positive.append(int(b))
-                    local_coords_c_positive.append(int(c))
-                    local_coords_d_positive.append(int(d))
-                else:
-                    local_coords_a_negative.append(int(a))
-                    local_coords_b_negative.append(int(b))
-                    local_coords_c_negative.append(int(c))
-                    local_coords_d_negative.append(int(d))
-
-                #TODO: WHAT IF I CALCULATE THE X,Y CENTER HERE, AND THEN I AVERAGE IT?, mi servono due rette minimo, qua ne ho una alla volta. Take prev? 
-
-                #mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), green, 1)
-                #frame = cv2.circle(frame, (int(a), int(b)), 5, green, -1)
-
-            #Clear data before averaging it
-            local_coords_a_positive = clear_dataset(local_coords_a_positive)
-            local_coords_b_positive = clear_dataset(local_coords_b_positive)
-            local_coords_c_positive = clear_dataset(local_coords_c_positive)
-            local_coords_d_positive = clear_dataset(local_coords_d_positive)
-
-            local_coords_a_negative = clear_dataset(local_coords_a_negative)
-            local_coords_b_negative = clear_dataset(local_coords_b_negative)
-            local_coords_c_negative = clear_dataset(local_coords_c_negative)
-            local_coords_d_negative = clear_dataset(local_coords_d_negative)
-
-            a_average_positive = np.average(local_coords_a_positive)
-            b_average_positive = np.average(local_coords_b_positive)
-            c_average_positive = np.average(local_coords_c_positive)
-            d_average_positive = np.average(local_coords_d_positive)
+                x_center_current, y_center_current = cramer(prev_m, prev_c, prev_d, m, c, d)
+                local_coords_x.append(x_center_current)
+                local_coords_y.append(y_center_current)
+                prev_m = m
+                prev_c = c
+                prev_d = d
 
 
-            a_average_negative = np.average(local_coords_a_negative)
-            b_average_negative = np.average(local_coords_b_negative)
-            c_average_negative = np.average(local_coords_c_negative)
-            d_average_negative = np.average(local_coords_d_negative)
+            clean_local_coords_x, clean_local_coords_y = clear_dataset(local_coords_x, local_coords_y, width, height)
 
-            m_average_positive = (d_average_positive - b_average_positive)/(c_average_positive - a_average_positive)
+            x_center = np.average(clean_local_coords_x)
+            y_center = np.average(clean_local_coords_y)
 
-            m_average_negative = (d_average_negative - b_average_negative) / (c_average_negative - a_average_negative)
-
-
-
-            q_one = m_average_positive * c_average_positive - d_average_positive
-            q_two = m_average_negative * c_average_negative - d_average_negative
-
-            matrix_determinant = [[m_average_positive, 1], [m_average_negative, 1]]
-            matrix_x = [[q_one, 1], [q_two, 1]]
-            matrix_y = [[m_average_positive, q_one], [m_average_negative, q_two]]
-
-            #print(matrix_determinant, matrix_x, matrix_y)
-
-            determinant = np.linalg.det(matrix_determinant)
-            x_det = np.linalg.det(matrix_x)
-            y_det = np.linalg.det(matrix_y)
-
-            x_center = abs(x_det / determinant)
-            y_center = abs(y_det / determinant)
-
-            # Use prev calculated data to make better guesses.
             x_in_bound = x_center < width
             y_in_bound = y_center < height
             coords_in_bounds = x_in_bound and y_in_bound
-
-            #print(determinant, x_det, y_det, x_center, y_center)
 
 
             x_center_all_average = np.average(x_center_all)
@@ -224,18 +228,13 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
                 if math.isnan(x_center_all_average):
                     x_center_all_average = x_center
                     y_center_all_average = y_center
-                else:
-                    if abs(math.atan(m_average_positive) * 180 / math.pi) < 1 or abs(math.atan(m_average_negative) * 180 / math.pi) < 1:
-                        #print("UNDER 1 DEGREE m!")
-                        x_center = x_center_all_average
-                        y_center = y_center_all_average
-                    else:
-                        mask = cv2.line(mask, (int(a_average_positive), int(b_average_positive)), (int(c_average_positive), int(d_average_positive)), green, 1)
-                        mask = cv2.line(mask, (int(a_average_negative), int(b_average_negative)), (int(c_average_negative), int(d_average_negative)), green, 1)
 
+                #Weighted average
+                weight_xy_just_calculated = 1
+                weight_xy_average = 2 * (generation + 1)
 
-                x_center_wa = (x_center + x_center_all_average) / 2
-                y_center_wa = (y_center + y_center_all_average) / 2
+                x_center_wa = (weight_xy_just_calculated * x_center + weight_xy_average * x_center_all_average) / (weight_xy_just_calculated + weight_xy_average)
+                y_center_wa = (weight_xy_just_calculated * y_center + weight_xy_average * y_center_all_average) / (weight_xy_just_calculated + weight_xy_average)
 
 
                 x_center_all.append(x_center_wa)
@@ -295,6 +294,6 @@ class Labeler:
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
         x_center_all, y_center_all, mask = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, generation)
         #Clear x_center_all and y_center_all
-        x_center_all = clear_dataset(x_center_all, True)
-        y_center_all = clear_dataset(y_center_all, True)
+        x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
+        print("\n Average x: " + str(np.average(x_center_all)) + " y: " +  str(np.average(y_center_all)))
         generation += 1
