@@ -121,7 +121,7 @@ def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     y_center = abs(y_det / determinant)
     return truncate(x_center), truncate(y_center)
 
-def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, generation):
+def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch):
     focal_length_pixel = 910
     round = 1
 
@@ -149,7 +149,7 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
 
     while video_captured.isOpened():
 
-        sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Generation: %r" % generation + "\033[0m")
+        sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Epoch: %r" % epoch + "\033[0m")
         sys.stdout.flush()
 
         # Capture frame by frame
@@ -231,7 +231,7 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
 
                 #Weighted average
                 weight_xy_just_calculated = 1
-                weight_xy_average = 2 * (generation + 1)
+                weight_xy_average = 2 * (epoch + 1)
 
                 x_center_wa = (weight_xy_just_calculated * x_center + weight_xy_average * x_center_all_average) / (weight_xy_just_calculated + weight_xy_average)
                 y_center_wa = (weight_xy_just_calculated * y_center + weight_xy_average * y_center_all_average) / (weight_xy_just_calculated + weight_xy_average)
@@ -288,12 +288,12 @@ class Labeler:
     # Create a mask image for drawing purposes
     mask = np.zeros_like(old_frame)
 
-    generation = 0
+    epoch = 0
 
     while(True):
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
-        x_center_all, y_center_all, mask = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, generation)
+        x_center_all, y_center_all, mask = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch)
         #Clear x_center_all and y_center_all
         x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
         print("\n Average x: " + str(np.average(x_center_all)) + " y: " +  str(np.average(y_center_all)))
-        generation += 1
+        epoch += 1
