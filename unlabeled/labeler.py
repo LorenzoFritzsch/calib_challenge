@@ -96,14 +96,6 @@ def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
 
     return dataset_x, dataset_y
 
-"""
-def truncate(val):
-    if math.isnan(val) or math.isinf(val):
-        return val
-    k = 10
-    return int(val * k) / k
-"""
-
 def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     q_one = m_one * c_one - d_one
     q_two = m_two * c_two - d_two
