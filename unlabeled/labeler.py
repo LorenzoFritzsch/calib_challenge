@@ -50,34 +50,52 @@ def clear_dataset(dataset_x, dataset_y, max_x, max_y):
 
 
 def remove_nan_or_inf_values_from_dataset(dataset):
+    dataset_cleared = []
     for value in dataset:
-        if math.isnan(value) or math.isinf(value):
-            dataset.remove(value)
-    return dataset
+        if not math.isnan(value) and not math.isinf(value):
+            dataset_cleared.append(value)
+    return dataset_cleared
 
 def remove_val_outside_standard_dev(dataset_x, dataset_y):
+    #Backward Elimination with standard deviation as significance level.
 
     standard_dev_x = get_standard_deviation(dataset_x)
     standard_dev_y = get_standard_deviation(dataset_y)
 
     len_dataset_x = len(dataset_x)
-    i = 0
 
-    while i in range(len_dataset_x):
+    cleared_dataset_x = []
+    cleared_dataset_y = []
+
+    for i in range(len_dataset_x):
 
         x = dataset_x[i]
         y = dataset_y[i]
 
-        if x >= standard_dev_x or y >= standard_dev_y:
-            dataset_x.pop(i)
-            dataset_y.pop(i)
+        if x < standard_dev_x and y < standard_dev_y:
+            cleared_dataset_x.append(x)
+            cleared_dataset_y.append(y)
 
-        i += 1
-        len_dataset_x = len(dataset_x)
-
-    return dataset_x, dataset_y
+    return cleared_dataset_x, cleared_dataset_y
 
 def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
+
+    """
+    len_dataset_x = len(dataset_x)
+
+    dataset_cleared_x = []
+    dataset_cleared_y = []
+
+    for i in range(len_dataset_x):
+        x = dataset_x[i]
+        y = dataset_y[i]
+
+        if x < max_x and y < max_y:
+            dataset_cleared_x.append(x)
+            dataset_cleared_y.append(y)
+
+    return dataset_cleared_x, dataset_cleared_y
+    """
 
     len_dataset_x = len(dataset_x)
     i = 0
@@ -96,6 +114,7 @@ def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
 
     return dataset_x, dataset_y
 
+
 def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     q_one = m_one * c_one - d_one
     q_two = m_two * c_two - d_two
@@ -104,8 +123,6 @@ def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     matrix_x = [[q_one, 1], [q_two, 1]]
     matrix_y = [[m_one, q_one], [m_two, q_two]]
 
-    #print(matrix_determinant, matrix_x, matrix_y)
-
     determinant = np.linalg.det(matrix_determinant)
     x_det = np.linalg.det(matrix_x)
     y_det = np.linalg.det(matrix_y)
@@ -113,6 +130,38 @@ def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     x_center = abs(x_det / determinant)
     y_center = abs(y_det / determinant)
     return x_center, y_center
+
+def calculate_pitch_and_yaw(center_direction, center_image, focal_length):
+    x_center_direction = center_direction[0]
+    y_center_direction = center_direction[1]
+
+    x_center_image = center_image[0]
+    y_center_image = center_image[1]
+
+    #print(x_center_direction, x_center_image, y_center_direction, y_center_image)
+
+    y_distance = abs(y_center_image - y_center_direction)
+    x_distance = abs(x_center_image - x_center_direction)
+    #print(y_distance, x_distance)
+
+    pitch = math.atan(y_distance / focal_length)
+    yaw = math.atan(x_distance / focal_length)
+
+    return pitch, yaw
+
+def merge_two_dataset_into_one(dataset_one, dataset_two):
+    len_one = len(dataset_one)
+    len_two = len(dataset_two)
+
+    dataset = []
+
+    if len_one == len_two:
+        for i in range(len_one):
+            x = dataset_one[i]
+            y = dataset_two[i]
+
+            dataset.append([x,y])
+    return dataset
 
 def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch):
     focal_length_pixel = 910
@@ -142,9 +191,6 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
 
     while video_captured.isOpened():
 
-        sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Epoch: %r" % epoch + "\033[0m")
-        sys.stdout.flush()
-
         # Capture frame by frame
         ret, frame = video_captured.read()
         if lost_frames + round == max_frames:
@@ -167,9 +213,6 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
         if p1 is not None:
             good_new = p1[st == 1]
             good_old = p0[st == 1]
-
-            local_coords_x = []
-            local_coords_y = []
 
             prev_m = None
             prev_c = None
@@ -195,50 +238,26 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
                     prev_d = d
 
                 x_center_current, y_center_current = cramer(prev_m, prev_c, prev_d, m, c, d)
-                local_coords_x.append(x_center_current)
-                local_coords_y.append(y_center_current)
+
+                x_center_all.append(x_center_current)
+                y_center_all.append(y_center_current)
+
                 prev_m = m
                 prev_c = c
                 prev_d = d
 
 
-            clean_local_coords_x, clean_local_coords_y = clear_dataset(local_coords_x, local_coords_y, width, height)
+            clear_x_all, clear_y_all = clear_dataset(x_center_all, y_center_all, width, height)
 
-            x_center = np.average(clean_local_coords_x)
-            y_center = np.average(clean_local_coords_y)
+            x_center = np.average(clear_x_all)
+            y_center = np.average(clear_y_all)
 
-            x_in_bound = x_center < width
-            y_in_bound = y_center < height
-            coords_in_bounds = x_in_bound and y_in_bound
+            pitch, yaw = calculate_pitch_and_yaw([x_center, y_center], [width/2, height/2], focal_length_pixel)
 
+            #print("Average pitch: " + str(np.average(clean_local_pitch)) + " Average yaw: " + str(np.average(clean_local_yaw)))
 
-            x_center_all_average = np.average(x_center_all)
-            y_center_all_average = np.average(y_center_all)
-
-
-            if not math.isnan(x_center) and coords_in_bounds:
-
-                if math.isnan(x_center_all_average):
-                    x_center_all_average = x_center
-                    y_center_all_average = y_center
-
-                #Weighted average
-                weight_xy_just_calculated = 1
-                weight_xy_average = 2 * (epoch + 1)
-
-                x_center_wa = (weight_xy_just_calculated * x_center + weight_xy_average * x_center_all_average) / (weight_xy_just_calculated + weight_xy_average)
-                y_center_wa = (weight_xy_just_calculated * y_center + weight_xy_average * y_center_all_average) / (weight_xy_just_calculated + weight_xy_average)
-
-
-                x_center_all.append(x_center_wa)
-                y_center_all.append(y_center_wa)
-
-                frame = cv2.circle(frame, (int(x_center_wa), int(y_center_wa)), 5, red, -1)
-                #frame = cv2.circle(frame, (int(x_center), int(y_center)), 4, yellow, -1)
-                #frame = cv2.circle(frame, (630,  441), 5, red, -1) #from average
-            else:
-                frame = cv2.circle(frame, (int(x_center_all_average), int(y_center_all_average)), 5, red, -1)
-                frames_with_errors += 1
+            if not math.isnan(x_center):
+                frame = cv2.circle(frame, (int(x_center), int(y_center)), 5, red, -1)
 
             img = cv2.add(frame, mask)
 
@@ -256,6 +275,10 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
             cv2.imshow('Main', img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+
+            sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Epoch: %r" % epoch + " Pitch: %r" % pitch + " Yaw: %r" % yaw + "\033[0m")
+            sys.stdout.flush()
+
             round += 1
 
     video_captured.release()
@@ -288,5 +311,9 @@ class Labeler:
         x_center_all, y_center_all, mask = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch)
         #Clear x_center_all and y_center_all
         x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
-        print("\n Average x: " + str(np.average(x_center_all)) + " y: " +  str(np.average(y_center_all)))
+        print(x_center_all, y_center_all)
+        x_center_all = remove_nan_or_inf_values_from_dataset(x_center_all)
+        y_center_all = remove_nan_or_inf_values_from_dataset(y_center_all)
+        print(x_center_all, y_center_all)
+        print("\n X size: " + str(len(x_center_all)) + " Y size: " +  str(len(y_center_all)))
         epoch += 1
