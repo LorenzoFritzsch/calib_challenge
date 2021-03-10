@@ -5,10 +5,8 @@ import cv2
 from matplotlib import pyplot as plt
 import sys
 
+import scipy.stats
 
-
-def segment_length(xa, ya, xb, yb):
-    return math.sqrt((xb - xa)**2 + (yb - ya)**2)
 
 def apply_gaussian_filter(old_gray, gray):
     old_gray_blurred = cv2.GaussianBlur(old_gray, (5, 5), 0)
@@ -23,40 +21,6 @@ def get_standard_deviation(dataset):
     n = len(dataset)
     return math.sqrt(sum((x - mean) ** 2 for x in dataset) / n)
 
-def standardize(to_standardize, dataset):
-    n = len(dataset)
-    if n == 0:
-        return to_standardize
-    mean = sum(dataset) / n
-
-    standard_deviation = math.sqrt(sum((x - mean) ** 2 for x in dataset) / n)
-    if standard_deviation == 0.0:
-        return
-    standardized = (to_standardize - mean) / standard_deviation
-
-    print("STANDARDIZING from " + str(n) + " elements. Mean: " + str(mean) + " Standard Deviation: " + str(standard_deviation))
-    print("To standardize: " + str(to_standardize) + " Standardized: " + str(standardized))
-    return standardized
-
-def clear_dataset(dataset_x, dataset_y, max_x, max_y):
-
-    dataset_x_cleared = []
-    dataset_y_cleared = []
-
-    standard_dev_x = get_standard_deviation(dataset_x)
-    standard_dev_y = get_standard_deviation(dataset_y)
-
-    for i in range(len(dataset_x)):
-
-        x = dataset_x[i]
-        y = dataset_y[i]
-
-        if x < max_x and y < max_y and x < standard_dev_x and y < standard_dev_y:
-            dataset_x_cleared.append(x)
-            dataset_y_cleared.append(y)
-
-    return dataset_x_cleared, dataset_y_cleared
-
 
 def remove_nan_or_inf_values_from_dataset(dataset):
     dataset_cleared = []
@@ -68,8 +32,8 @@ def remove_nan_or_inf_values_from_dataset(dataset):
 def remove_val_outside_standard_dev(dataset_x, dataset_y):
     #Backward Elimination with standard deviation as significance level.
 
-    standard_dev_x = get_standard_deviation(dataset_x)
-    standard_dev_y = get_standard_deviation(dataset_y)
+    max_val_x, min_val_x = get_max_min_value_considering_standard_dev(dataset_x)
+    max_val_y, min_val_y = get_max_min_value_considering_standard_dev(dataset_y)
 
     len_dataset_x = len(dataset_x)
 
@@ -81,11 +45,42 @@ def remove_val_outside_standard_dev(dataset_x, dataset_y):
         x = dataset_x[i]
         y = dataset_y[i]
 
-        if x < standard_dev_x and y < standard_dev_y:
+        if x < max_val_x and y < max_val_y and x > min_val_x and y > min_val_y:
             cleared_dataset_x.append(x)
             cleared_dataset_y.append(y)
 
     return cleared_dataset_x, cleared_dataset_y
+
+def get_only_statistically_viable_coords(dataset):
+    average = np.average(dataset)
+    stand_dev = get_standard_deviation(dataset)
+
+    viable_dataset = []
+    all_probabilities = []
+
+    for i in dataset:
+        all_probabilities.append(scipy.stats.norm(average,stand_dev).pdf(i))
+
+    average_probability = np.average(all_probabilities)
+
+    for i in dataset:
+        probability = scipy.stats.norm(average,stand_dev).pdf(i)
+        if probability >= average_probability:
+            viable_dataset.append(i)
+
+    return viable_dataset
+
+
+def get_max_min_value_considering_standard_dev(dataset):
+
+    average = np.average(dataset)
+
+    standard_dev = get_standard_deviation(dataset)
+
+    max_val = average + standard_dev
+    min_val = average - standard_dev
+
+    return max_val, min_val
 
 def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
 
@@ -103,24 +98,6 @@ def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
             dataset_cleared_y.append(y)
 
     return dataset_cleared_x, dataset_cleared_y
-    """
-    len_dataset_x = len(dataset_x)
-    i = 0
-
-    while i in range(len_dataset_x):
-
-        x = dataset_x[i]
-        y = dataset_y[i]
-
-        if x > max_x or y > max_y:
-            dataset_x.pop(i)
-            dataset_y.pop(i)
-
-        i += 1
-        len_dataset_x = len(dataset_x)
-
-    return dataset_x, dataset_y
-    """
 
 def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     q_one = m_one * c_one - d_one
@@ -182,6 +159,8 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
     frames_with_errors = 0
     max_frames = 1200
 
+    pitch_yaw = []
+
     while video_captured.isOpened():
 
         # Capture frame by frame
@@ -232,24 +211,33 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
 
                 x_center_current, y_center_current = cramer(prev_m, prev_c, prev_d, m, c, d)
 
-                if not math.isnan(x_center_current) and not math.isnan(y_center_current) and not math.isinf(x_center_current) and not math.isinf(y_center_current):
+                are_nan_or_inf = math.isnan(x_center_current) and math.isnan(y_center_current) and math.isinf(x_center_current) and math.isinf(y_center_current)
+                are_inside_bounds = x_center_current < width and y_center_current < height
+
+                if not are_nan_or_inf and are_inside_bounds:
                     x_center_all.append(x_center_current)
                     y_center_all.append(y_center_current)
+
 
                 prev_m = m
                 prev_c = c
                 prev_d = d
 
+            clear_x_all, clear_y_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
+            clear_x_all = get_only_statistically_viable_coords(x_center_all)
+            clear_y_all = get_only_statistically_viable_coords(y_center_all)
 
-            clear_x_all, clear_y_all = clear_dataset(x_center_all, y_center_all, width, height)
 
+            #Use gaussian distribution
             x_center = np.average(clear_x_all)
             y_center = np.average(clear_y_all)
 
+
             pitch, yaw = calculate_pitch_and_yaw([x_center, y_center], [width/2, height/2], focal_length_pixel)
 
-            if not math.isnan(x_center):
-                frame = cv2.circle(frame, (int(x_center), int(y_center)), 5, red, -1)
+            pitch_yaw.append([pitch, yaw])
+
+            frame = cv2.circle(frame, (int(x_center), int(y_center)), 5, red, -1)
 
             img = cv2.add(frame, mask)
 
@@ -262,7 +250,7 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
             img = cv2.line(img, (0, 0), (int(width), int(height)), red)
             img = cv2.line(img, (int(width), 0), (0, int(height)), red)
             #Car, approx
-            img = cv2.line(img, car_area[0], car_area[1], red)
+            #img = cv2.line(img, car_area[0], car_area[1], red)
 
             cv2.imshow('Main', img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -276,7 +264,7 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
     video_captured.release()
     cv2.destroyAllWindows()
 
-    return x_center_all, y_center_all, mask
+    return x_center_all, y_center_all, mask, pitch_yaw
 
 class Labeler:
     x_center_all = []
@@ -300,10 +288,20 @@ class Labeler:
 
     while(True):
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
-        x_center_all, y_center_all, mask = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch)
+        x_center_all, y_center_all, mask, pitch_yaw = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch)
         #Clear x_center_all and y_center_all
         x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
         x_center_all = remove_nan_or_inf_values_from_dataset(x_center_all)
         y_center_all = remove_nan_or_inf_values_from_dataset(y_center_all)
-        print("\n X size: " + str(len(x_center_all)) + " Y size: " +  str(len(y_center_all)))
+
+        x_center_all = get_only_statistically_viable_coords(x_center_all)
+        y_center_all = get_only_statistically_viable_coords(y_center_all)
+
+        pitch_yaw_reshaped = np.reshape(pitch_yaw, (-1, 2))
+
+        f = open(str(video_number)+".txt", "w")
+        f.write(str(pitch_yaw_reshaped))
+        f.close()
+
+        print("\n X len: " + str(len(x_center_all)) + " Y len: " +  str(len(y_center_all)) + " Pitch, yaw len: " + len(pitch_yaw))
         epoch += 1
