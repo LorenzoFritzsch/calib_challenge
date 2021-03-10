@@ -303,9 +303,7 @@ class Labeler:
         x_center_all, y_center_all, mask = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch)
         #Clear x_center_all and y_center_all
         x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
-        print(x_center_all, y_center_all)
         x_center_all = remove_nan_or_inf_values_from_dataset(x_center_all)
         y_center_all = remove_nan_or_inf_values_from_dataset(y_center_all)
-        print(x_center_all, y_center_all)
         print("\n X size: " + str(len(x_center_all)) + " Y size: " +  str(len(y_center_all)))
         epoch += 1
