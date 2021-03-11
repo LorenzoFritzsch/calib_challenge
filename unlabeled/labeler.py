@@ -224,8 +224,6 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
                 prev_d = d
 
             clear_x_all, clear_y_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
-            clear_x_all = get_only_statistically_viable_coords(x_center_all)
-            clear_y_all = get_only_statistically_viable_coords(y_center_all)
 
 
             #Use gaussian distribution
