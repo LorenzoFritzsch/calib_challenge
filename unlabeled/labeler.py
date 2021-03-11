@@ -301,5 +301,5 @@ class Labeler:
         f.write(str(pitch_yaw_reshaped))
         f.close()
 
-        print("\n X len: " + str(len(x_center_all)) + " Y len: " +  str(len(y_center_all)) + " Pitch, yaw len: " + len(pitch_yaw))
+        print("\n X len: " + str(len(x_center_all)) + " Y len: " +  str(len(y_center_all)) + " Pitch, yaw len: " + str(len(pitch_yaw)))
         epoch += 1
