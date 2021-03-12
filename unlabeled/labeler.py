@@ -58,15 +58,34 @@ def get_only_statistically_viable_coords(dataset):
     viable_dataset = []
     all_probabilities = []
 
+    index_one = 0
+    len_dataset = len(dataset)
+
+    print("\n")
+
     for i in dataset:
         all_probabilities.append(scipy.stats.norm(average,stand_dev).pdf(i))
 
+        index_one += 1
+        progress = int((index_one / len_dataset) * 100)
+        sys.stdout.write("\r1/2 Getting statistically viable coords, progress: %r" % progress + "%")
+        sys.stdout.flush()
+
     average_probability = np.average(all_probabilities)
+
+    print("\n")
+
+    index_two = 0
 
     for i in dataset:
         probability = scipy.stats.norm(average,stand_dev).pdf(i)
         if probability >= average_probability:
             viable_dataset.append(i)
+
+        index_two += 1
+        progress = int((index_two / len_dataset) * 100)
+        sys.stdout.write("\r2/2 Getting statistically viable coords, progress: %r" % progress + "%")
+        sys.stdout.flush()
 
     return viable_dataset
 
@@ -122,18 +141,25 @@ def calculate_pitch_and_yaw(center_direction, center_image, focal_length):
     x_center_image = center_image[0]
     y_center_image = center_image[1]
 
-    #print(x_center_direction, x_center_image, y_center_direction, y_center_image)
-
     y_distance = abs(y_center_image - y_center_direction)
     x_distance = abs(x_center_image - x_center_direction)
-    #print(y_distance, x_distance)
 
     pitch = math.atan(y_distance / focal_length)
     yaw = math.atan(x_distance / focal_length)
 
     return pitch, yaw
 
-def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch):
+def get_all_frames(video_captured):
+    all_frames = []
+    while video_captured.isOpened():
+
+        ret, frame = video_captured.read()
+        if not ret:
+            break
+        all_frames.append(frame)
+    return all_frames
+
+def actual_labeler(video_captured, x_center_all, y_center_all, feature_params, lk_params, epoch):
     focal_length_pixel = 910
     round = 1
 
@@ -147,29 +173,19 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
     diagonal = math.sqrt(width**2 + height**2)
     fov = (2 * math.atan(diagonal / focal_length_pixel)) * 180 / math.pi
 
-    ret, old_frame = video_captured.read()
-    old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+    frames = get_all_frames(video_captured)
+
+    #ret, old_frame = video_captured.read()
+    old_gray = cv2.cvtColor(frames[1], cv2.COLOR_BGR2GRAY)
     p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+
 
     car_area = [(0, int(height - 200)), (int(width), int(height - 200))]
 
-    old_mask = mask
-
-    lost_frames = 0
-    frames_with_errors = 0
-    max_frames = 1200
-
     pitch_yaw = []
 
-    while video_captured.isOpened():
+    for frame in frames:
 
-        # Capture frame by frame
-        ret, frame = video_captured.read()
-        if lost_frames + round == max_frames:
-            break
-        if np.shape(frame) == ():
-            lost_frames += 1
-            continue
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # Apply filters
@@ -237,20 +253,11 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
 
             frame = cv2.circle(frame, (int(x_center), int(y_center)), 5, red, -1)
 
-            img = cv2.add(frame, mask)
-
             # Now update the previous frame and previous points
             old_gray = gray.copy()
-            old_mask = mask
             p0 = good_new.reshape(-1, 1, 2)
 
-            #Diagonals
-            img = cv2.line(img, (0, 0), (int(width), int(height)), red)
-            img = cv2.line(img, (int(width), 0), (0, int(height)), red)
-            #Car, approx
-            #img = cv2.line(img, car_area[0], car_area[1], red)
-
-            cv2.imshow('Main', img)
+            cv2.imshow('Main', frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
@@ -262,13 +269,16 @@ def actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_par
     video_captured.release()
     cv2.destroyAllWindows()
 
-    return x_center_all, y_center_all, mask, pitch_yaw
+    return x_center_all, y_center_all, pitch_yaw
 
 class Labeler:
     x_center_all = []
     y_center_all = []
 
-    video_number = 4
+    video_number = 0
+    max_video_number = 5
+
+    n_of_epochs = 10
 
     # params for ShiTomasi corner detection
     feature_params = dict(maxCorners=0, qualityLevel=0.01, minDistance=15, blockSize=5)
@@ -276,17 +286,12 @@ class Labeler:
     # Parameters for lucas kanade optical flow
     lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-    video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
-
-    ret, old_frame = video_captured.read()
-    # Create a mask image for drawing purposes
-    mask = np.zeros_like(old_frame)
-
     epoch = 0
 
     while(True):
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
-        x_center_all, y_center_all, mask, pitch_yaw = actual_labeler(video_captured, x_center_all, y_center_all, mask, feature_params, lk_params, epoch)
+        print("Video number: " + str(video_number))
+        x_center_all, y_center_all, pitch_yaw = actual_labeler(video_captured, x_center_all, y_center_all, feature_params, lk_params, epoch)
         #Clear x_center_all and y_center_all
         x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
         x_center_all = remove_nan_or_inf_values_from_dataset(x_center_all)
@@ -295,11 +300,19 @@ class Labeler:
         x_center_all = get_only_statistically_viable_coords(x_center_all)
         y_center_all = get_only_statistically_viable_coords(y_center_all)
 
-        pitch_yaw_reshaped = np.reshape(pitch_yaw, (-1, 2))
+        pitch_yaw_reshaped = str(pitch_yaw).replace("], [", "\n").replace(", ", " ").replace("[[", "").replace("]]", "")
 
         f = open(str(video_number)+".txt", "w")
         f.write(str(pitch_yaw_reshaped))
         f.close()
 
-        print("\n X len: " + str(len(x_center_all)) + " Y len: " +  str(len(y_center_all)) + " Pitch, yaw len: " + str(len(pitch_yaw)))
+        if video_number == max_video_number:
+            break
+
+        if epoch == n_of_epochs:
+            epoch = -1
+            video_number += 1
+            x_center_all = []
+            y_center_all = []
+
         epoch += 1
