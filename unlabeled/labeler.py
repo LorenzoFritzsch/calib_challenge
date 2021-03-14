@@ -2,9 +2,7 @@ import numpy as np
 import statistics
 import math
 import cv2
-from matplotlib import pyplot as plt
 import sys
-
 import scipy.stats
 
 
@@ -77,10 +75,10 @@ def get_only_statistically_viable_coords(dataset):
 
     index_two = 0
 
-    for i in dataset:
-        probability = scipy.stats.norm(average,stand_dev).pdf(i)
+    for i in range(len(all_probabilities)):
+        probability = all_probabilities[i]#scipy.stats.norm(average,stand_dev).pdf(i)
         if probability >= average_probability:
-            viable_dataset.append(i)
+            viable_dataset.append(dataset[i])
 
         index_two += 1
         progress = int((index_two / len_dataset) * 100)
@@ -159,7 +157,7 @@ def get_all_frames(video_captured):
         all_frames.append(frame)
     return all_frames
 
-def actual_labeler(video_captured, x_center_all, y_center_all, feature_params, lk_params, epoch):
+def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, feature_params, lk_params, epoch):
     focal_length_pixel = 910
     round = 1
 
@@ -249,19 +247,23 @@ def actual_labeler(video_captured, x_center_all, y_center_all, feature_params, l
 
             pitch, yaw = calculate_pitch_and_yaw([x_center, y_center], [width/2, height/2], focal_length_pixel)
 
-            pitch_yaw.append([pitch, yaw])
+            if epoch != 0:
+                old_pitch_yaw = pitch_yaw_old[round - 1]
+                pitch_average = (old_pitch_yaw[0] + pitch) / 2
+                yaw_average = (old_pitch_yaw[1] + yaw) / 2
+                pitch_yaw.append([pitch_average, yaw_average])
+            else:
+                pitch_yaw.append([pitch, yaw])
 
-            frame = cv2.circle(frame, (int(x_center), int(y_center)), 5, red, -1)
 
             # Now update the previous frame and previous points
             old_gray = gray.copy()
             p0 = good_new.reshape(-1, 1, 2)
 
-            cv2.imshow('Main', frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Epoch: %r" % epoch + " Pitch: %r" % pitch + " Yaw: %r" % yaw + "\033[0m")
+            sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Epoch: %r" % epoch + "\033[0m")
             sys.stdout.flush()
 
             round += 1
@@ -275,10 +277,12 @@ class Labeler:
     x_center_all = []
     y_center_all = []
 
+    old_pitch_yaw = []
+
     video_number = 0
     max_video_number = 5
 
-    n_of_epochs = 10
+    n_of_epochs = 2
 
     # params for ShiTomasi corner detection
     feature_params = dict(maxCorners=0, qualityLevel=0.01, minDistance=15, blockSize=5)
@@ -290,8 +294,8 @@ class Labeler:
 
     while(True):
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
-        print("Video number: " + str(video_number))
-        x_center_all, y_center_all, pitch_yaw = actual_labeler(video_captured, x_center_all, y_center_all, feature_params, lk_params, epoch)
+        print("\nVideo number: " + str(video_number))
+        x_center_all, y_center_all, pitch_yaw = actual_labeler(video_captured, x_center_all, y_center_all, old_pitch_yaw, feature_params, lk_params, epoch)
         #Clear x_center_all and y_center_all
         x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
         x_center_all = remove_nan_or_inf_values_from_dataset(x_center_all)
@@ -299,6 +303,8 @@ class Labeler:
 
         x_center_all = get_only_statistically_viable_coords(x_center_all)
         y_center_all = get_only_statistically_viable_coords(y_center_all)
+
+        old_pitch_yaw = pitch_yaw
 
         pitch_yaw_reshaped = str(pitch_yaw).replace("], [", "\n").replace(", ", " ").replace("[[", "").replace("]]", "")
 
