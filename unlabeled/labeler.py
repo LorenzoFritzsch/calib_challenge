@@ -5,8 +5,10 @@ import cv2
 import sys
 import scipy.stats
 from sklearn.cluster import KMeans
+
 from sklearn.metrics import silhouette_score
 
+from sklearn.cluster import AgglomerativeClustering
 
 np.seterr(divide='ignore', invalid='ignore')
 
@@ -188,6 +190,24 @@ def get_centroid_of_most_populated_cluster(dataset):
 
     return np.average(items_in_most_populated_cluster)
 
+def hierarchical_clustering(dataset):
+
+    number_of_clusters = get_k_for_kmeans(dataset)
+
+    dataset = np.array(dataset).reshape(-1, 1)
+    clustering = AgglomerativeClustering(n_clusters=number_of_clusters, affinity='euclidean', linkage='ward').fit(dataset)
+    clusters_list = clustering.labels_
+    most_populated_cluster =  statistics.mode(clusters_list)
+
+    items_in_most_populated_cluster = []
+
+    for i in range(len(clusters_list)):
+        cluster_number = clusters_list[i]
+        if cluster_number == most_populated_cluster:
+            items_in_most_populated_cluster.append(dataset[i])
+
+    return np.average(items_in_most_populated_cluster)
+
 
 def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number, epoch):
     round = 1
@@ -280,8 +300,8 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
             x_stat_ok = get_only_statistically_viable_coords(clear_x)
             y_stat_ok = get_only_statistically_viable_coords(clear_y)
 
-            x_centroid = get_centroid_of_most_populated_cluster(x_stat_ok)
-            y_centroid = get_centroid_of_most_populated_cluster(y_stat_ok)
+            x_centroid = hierarchical_clustering(x_stat_ok)
+            y_centroid = hierarchical_clustering(y_stat_ok)
 
             dict_frames.update({key_x: clear_x})
             dict_frames.update({key_y: clear_y})
@@ -315,9 +335,9 @@ class Labeler:
     y_center_all = []
 
     video_number = 0
-    max_video_number = 0
+    max_video_number = 4
 
-    n_of_epochs = 3
+    n_of_epochs = 2
 
     dict_frames = {}
 
