@@ -4,7 +4,11 @@ import math
 import cv2
 import sys
 import scipy.stats
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 
+
+np.seterr(divide='ignore', invalid='ignore')
 
 def apply_gaussian_filter(old_gray, gray):
     old_gray_blurred = cv2.GaussianBlur(old_gray, (5, 5), 0)
@@ -59,31 +63,17 @@ def get_only_statistically_viable_coords(dataset):
     index_one = 0
     len_dataset = len(dataset)
 
-    print("\n")
-
     for i in dataset:
         all_probabilities.append(scipy.stats.norm(average,stand_dev).pdf(i))
 
-        index_one += 1
-        progress = int((index_one / len_dataset) * 100)
-        sys.stdout.write("\r1/2 Getting statistically viable coords, progress: %r" % progress + "%")
-        sys.stdout.flush()
-
     average_probability = np.average(all_probabilities)
-
-    print("\n")
 
     index_two = 0
 
     for i in range(len(all_probabilities)):
-        probability = all_probabilities[i]#scipy.stats.norm(average,stand_dev).pdf(i)
+        probability = all_probabilities[i]
         if probability >= average_probability:
             viable_dataset.append(dataset[i])
-
-        index_two += 1
-        progress = int((index_two / len_dataset) * 100)
-        sys.stdout.write("\r2/2 Getting statistically viable coords, progress: %r" % progress + "%")
-        sys.stdout.flush()
 
     return viable_dataset
 
@@ -157,19 +147,55 @@ def get_all_frames(video_captured):
         all_frames.append(frame)
     return all_frames
 
-def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, feature_params, lk_params, epoch):
-    focal_length_pixel = 910
-    round = 1
+def get_k_for_kmeans(dataset):
 
-    green = (20, 254, 87)
-    red = (0, 0, 255)
-    yellow = (255, 254, 52)
+    #!!!!!!!!!FIND A BETTER WAY!!!!!!!!!!
+
+    range_n_clusters = range(2, 5)
+    dataToFit = np.array(dataset).reshape(-1, 1)
+    best_clusters = 0
+    previous_silh_avg = 0.0
+
+    for n_clusters in range_n_clusters:
+        clusterer = KMeans(n_clusters=n_clusters)
+        cluster_labels = clusterer.fit_predict(dataToFit)
+        silhouette_avg = silhouette_score(dataToFit, cluster_labels)
+
+        if silhouette_avg > previous_silh_avg:
+            previous_silh_avg = silhouette_avg
+            best_clusters = n_clusters
+
+    return best_clusters
+
+def get_centroid_of_most_populated_cluster(dataset):
+
+    clusters = get_k_for_kmeans(dataset)
+
+    kmeans = KMeans(n_clusters = clusters, init = 'k-means++', random_state = 42)
+
+    dataset = np.array(dataset).reshape(-1, 1)
+    clusters_kmeans = kmeans.fit_predict(dataset)
+
+    #Get most populated cluster
+    most_populated_cluster = statistics.mode(clusters_kmeans)
+
+    items_in_most_populated_cluster = []
+
+    for i in range(len(clusters_kmeans)):
+        cluster_number = clusters_kmeans[i]
+        if cluster_number == most_populated_cluster:
+            items_in_most_populated_cluster.append(dataset[i])
+
+    return np.average(items_in_most_populated_cluster)
+
+
+def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number, epoch):
+    round = 1
 
     # Get frame dimensions
     width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
     height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
-    diagonal = math.sqrt(width**2 + height**2)
-    fov = (2 * math.atan(diagonal / focal_length_pixel)) * 180 / math.pi
+
 
     frames = get_all_frames(video_captured)
 
@@ -180,9 +206,14 @@ def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, fe
 
     car_area = [(0, int(height - 200)), (int(width), int(height - 200))]
 
-    pitch_yaw = []
+    centers = []
+    x_centers = []
+    y_centers = []
 
     for frame in frames:
+
+        key_x = str(round)+"-x"
+        key_y = str(round)+"-y"
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -203,6 +234,9 @@ def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, fe
             prev_m = None
             prev_c = None
             prev_d = None
+
+            local_x = []
+            local_y = []
 
             for i, (new, old) in enumerate(zip(good_new, good_old)):
 
@@ -229,32 +263,32 @@ def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, fe
                 are_inside_bounds = x_center_current < width and y_center_current < height
 
                 if not are_nan_or_inf and are_inside_bounds:
-                    x_center_all.append(x_center_current)
-                    y_center_all.append(y_center_current)
+                    local_x.append(x_center_current)
+                    local_y.append(y_center_current)
 
 
                 prev_m = m
                 prev_c = c
                 prev_d = d
 
-            clear_x_all, clear_y_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
+            if epoch > 0:
+                local_x.extend(dict_frames[key_x])
+                local_y.extend(dict_frames[key_y])
 
+            clear_x, clear_y = remove_val_outside_standard_dev(local_x, local_y)
 
-            #Use gaussian distribution
-            x_center = np.average(clear_x_all)
-            y_center = np.average(clear_y_all)
+            x_stat_ok = get_only_statistically_viable_coords(clear_x)
+            y_stat_ok = get_only_statistically_viable_coords(clear_y)
 
+            x_centroid = get_centroid_of_most_populated_cluster(x_stat_ok)
+            y_centroid = get_centroid_of_most_populated_cluster(y_stat_ok)
 
-            pitch, yaw = calculate_pitch_and_yaw([x_center, y_center], [width/2, height/2], focal_length_pixel)
+            dict_frames.update({key_x: clear_x})
+            dict_frames.update({key_y: clear_y})
 
-            if epoch != 0:
-                old_pitch_yaw = pitch_yaw_old[round - 1]
-                pitch_average = (old_pitch_yaw[0] + pitch) / 2
-                yaw_average = (old_pitch_yaw[1] + yaw) / 2
-                pitch_yaw.append([pitch_average, yaw_average])
-            else:
-                pitch_yaw.append([pitch, yaw])
-
+            centers.append([x_centroid, y_centroid])
+            x_centers.append(x_centroid)
+            y_centers.append(y_centroid)
 
             # Now update the previous frame and previous points
             old_gray = gray.copy()
@@ -263,7 +297,7 @@ def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, fe
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            sys.stdout.write("\033[93m" + "\rFrame: %r" % round + " Epoch: %r" % epoch + "\033[0m")
+            sys.stdout.write("\033[93m" + "\rVideo: %r" % video_number + " Frame: %r" % round + " Epoch: %r" % epoch + "\033[0m")
             sys.stdout.flush()
 
             round += 1
@@ -271,18 +305,21 @@ def actual_labeler(video_captured, x_center_all, y_center_all, pitch_yaw_old, fe
     video_captured.release()
     cv2.destroyAllWindows()
 
-    return x_center_all, y_center_all, pitch_yaw
+    return centers, x_centers, y_centers, dict_frames
 
 class Labeler:
+
+    focal_length_pixel = 910
+
     x_center_all = []
     y_center_all = []
 
-    old_pitch_yaw = []
-
     video_number = 0
-    max_video_number = 5
+    max_video_number = 0
 
-    n_of_epochs = 2
+    n_of_epochs = 3
+
+    dict_frames = {}
 
     # params for ShiTomasi corner detection
     feature_params = dict(maxCorners=0, qualityLevel=0.01, minDistance=15, blockSize=5)
@@ -293,18 +330,32 @@ class Labeler:
     epoch = 0
 
     while(True):
+
+        if video_number > max_video_number:
+            break
+
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
-        print("\nVideo number: " + str(video_number))
-        x_center_all, y_center_all, pitch_yaw = actual_labeler(video_captured, x_center_all, y_center_all, old_pitch_yaw, feature_params, lk_params, epoch)
-        #Clear x_center_all and y_center_all
-        x_center_all, y_center_all = remove_val_outside_standard_dev(x_center_all, y_center_all)
-        x_center_all = remove_nan_or_inf_values_from_dataset(x_center_all)
-        y_center_all = remove_nan_or_inf_values_from_dataset(y_center_all)
+        width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-        x_center_all = get_only_statistically_viable_coords(x_center_all)
-        y_center_all = get_only_statistically_viable_coords(y_center_all)
+        centers, x_centers, y_centers, dict_frames = get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number, epoch)
 
-        old_pitch_yaw = pitch_yaw
+        pitch_yaw = []
+
+        print("\n")
+
+        for i in range(len(centers)):
+            progress = int(((i+1) / len(centers)) * 100)
+            sys.stdout.write("\rCalulating pitch and yaw angles, progress: %r" % progress + "%")
+            sys.stdout.flush()
+
+            x = centers[i][0]
+            y = centers[i][1]
+
+            pitch, yaw = calculate_pitch_and_yaw([x, y], [width/2, height/2], focal_length_pixel)
+            pitch_yaw.append([pitch, yaw])
+
+        print("\n")
 
         pitch_yaw_reshaped = str(pitch_yaw).replace("], [", "\n").replace(", ", " ").replace("[[", "").replace("]]", "")
 
@@ -312,13 +363,11 @@ class Labeler:
         f.write(str(pitch_yaw_reshaped))
         f.close()
 
-        if video_number == max_video_number:
-            break
-
         if epoch == n_of_epochs:
             epoch = -1
             video_number += 1
             x_center_all = []
             y_center_all = []
+            dict_frames = {}
 
         epoch += 1
