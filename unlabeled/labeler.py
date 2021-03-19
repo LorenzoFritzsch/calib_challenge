@@ -192,6 +192,9 @@ def get_centroid_of_most_populated_cluster(dataset):
 
 def hierarchical_clustering(dataset):
 
+    if len(dataset) <= 4:
+        return np.average(dataset)
+
     number_of_clusters = get_k_for_kmeans(dataset)
 
     dataset = np.array(dataset).reshape(-1, 1)
@@ -224,7 +227,7 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
     p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
 
 
-    car_area = [(0, int(height - 200)), (int(width), int(height - 200))]
+    #car_area = [(0, int(height - 200)), (int(width), int(height - 200))]
 
     centers = []
     x_centers = []
@@ -269,8 +272,8 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
                 else:
                     continue
 
-                if b > car_area[0][1] or d > car_area[1][1]:
-                    continue
+                #if b > car_area[0][1] or d > car_area[1][1]:
+                    #continue
 
                 if prev_m == None:
                     prev_m = m
@@ -297,11 +300,11 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
 
             clear_x, clear_y = remove_val_outside_standard_dev(local_x, local_y)
 
-            x_stat_ok = get_only_statistically_viable_coords(clear_x)
-            y_stat_ok = get_only_statistically_viable_coords(clear_y)
+            #x_stat_ok = get_only_statistically_viable_coords(clear_x)
+            #y_stat_ok = get_only_statistically_viable_coords(clear_y)
 
-            x_centroid = hierarchical_clustering(x_stat_ok)
-            y_centroid = hierarchical_clustering(y_stat_ok)
+            x_centroid = hierarchical_clustering(clear_x)
+            y_centroid = hierarchical_clustering(clear_y)
 
             dict_frames.update({key_x: clear_x})
             dict_frames.update({key_y: clear_y})
@@ -337,7 +340,7 @@ class Labeler:
     video_number = 0
     max_video_number = 4
 
-    n_of_epochs = 2
+    n_of_epochs = 5
 
     dict_frames = {}
 
