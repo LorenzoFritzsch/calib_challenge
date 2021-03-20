@@ -5,10 +5,10 @@ import cv2
 import sys
 import scipy.stats
 from sklearn.cluster import KMeans
-
 from sklearn.metrics import silhouette_score
-
 from sklearn.cluster import AgglomerativeClustering
+
+import matplotlib.pyplot as plt
 
 np.seterr(divide='ignore', invalid='ignore')
 
@@ -55,29 +55,42 @@ def remove_val_outside_standard_dev(dataset_x, dataset_y):
 
     return cleared_dataset_x, cleared_dataset_y
 
-def get_only_statistically_viable_coords(dataset):
-    average = np.average(dataset)
-    stand_dev = get_standard_deviation(dataset)
+def get_only_statistically_viable_coords(dataset_x, dataset_y):
+    average_x = np.average(dataset_x)
+    average_y = np.average(dataset_y)
 
-    viable_dataset = []
-    all_probabilities = []
+    stand_dev_x = get_standard_deviation(dataset_x)
+    stand_dev_y = get_standard_deviation(dataset_y)
 
-    index_one = 0
-    len_dataset = len(dataset)
+    viable_dataset_x = []
+    viable_dataset_y = []
 
-    for i in dataset:
-        all_probabilities.append(scipy.stats.norm(average,stand_dev).pdf(i))
+    all_probabilities_x = []
+    all_probabilities_y = []
 
-    average_probability = np.average(all_probabilities)
+    len_dataset_x = len(dataset_x)
+    len_dataset_y = len(dataset_y)
 
-    index_two = 0
+    for i in range(len(dataset_x)): #dataset_x and dataset_y have the same size
 
-    for i in range(len(all_probabilities)):
-        probability = all_probabilities[i]
-        if probability >= average_probability:
-            viable_dataset.append(dataset[i])
+        x = dataset_x[i]
+        y = dataset_y[i]
 
-    return viable_dataset
+        all_probabilities_x.append(scipy.stats.norm(average_x, stand_dev_x).pdf(x))
+        all_probabilities_y.append(scipy.stats.norm(average_y, stand_dev_y).pdf(y))
+
+    average_probability_x = np.average(all_probabilities_x)
+    average_probability_y = np.average(all_probabilities_y)
+
+    for i in range(len(all_probabilities_x)): #all_probabilities_x and all_probabilities_y have the same size
+        probability_x = all_probabilities_x[i]
+        probability_y = all_probabilities_y[i]
+
+        if probability_x >= average_probability_x and probability_y >= average_probability_y:
+            viable_dataset_x.append(dataset_x[i])
+            viable_dataset_y.append(dataset_y[i])
+
+    return viable_dataset_x, viable_dataset_y
 
 
 def get_max_min_value_considering_standard_dev(dataset):
@@ -151,8 +164,6 @@ def get_all_frames(video_captured):
 
 def get_k_for_kmeans(dataset):
 
-    #!!!!!!!!!FIND A BETTER WAY!!!!!!!!!!
-
     range_n_clusters = range(2, 5)
     dataToFit = np.array(dataset).reshape(-1, 1)
     best_clusters = 0
@@ -168,27 +179,6 @@ def get_k_for_kmeans(dataset):
             best_clusters = n_clusters
 
     return best_clusters
-
-def get_centroid_of_most_populated_cluster(dataset):
-
-    clusters = get_k_for_kmeans(dataset)
-
-    kmeans = KMeans(n_clusters = clusters, init = 'k-means++', random_state = 42)
-
-    dataset = np.array(dataset).reshape(-1, 1)
-    clusters_kmeans = kmeans.fit_predict(dataset)
-
-    #Get most populated cluster
-    most_populated_cluster = statistics.mode(clusters_kmeans)
-
-    items_in_most_populated_cluster = []
-
-    for i in range(len(clusters_kmeans)):
-        cluster_number = clusters_kmeans[i]
-        if cluster_number == most_populated_cluster:
-            items_in_most_populated_cluster.append(dataset[i])
-
-    return np.average(items_in_most_populated_cluster)
 
 def hierarchical_clustering(dataset):
 
@@ -212,7 +202,7 @@ def hierarchical_clustering(dataset):
     return np.average(items_in_most_populated_cluster)
 
 
-def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number, epoch):
+def get_center_of_direction_for_each_frame(video_captured, dict_frames, x_all, y_all, feature_params, lk_params, video_number, epoch):
     round = 1
 
     # Get frame dimensions
@@ -226,12 +216,7 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
     old_gray = cv2.cvtColor(frames[1], cv2.COLOR_BGR2GRAY)
     p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
 
-
-    #car_area = [(0, int(height - 200)), (int(width), int(height - 200))]
-
     centers = []
-    x_centers = []
-    y_centers = []
 
     for frame in frames:
 
@@ -272,9 +257,6 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
                 else:
                     continue
 
-                #if b > car_area[0][1] or d > car_area[1][1]:
-                    #continue
-
                 if prev_m == None:
                     prev_m = m
                     prev_c = c
@@ -289,29 +271,20 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
                     local_x.append(x_center_current)
                     local_y.append(y_center_current)
 
+                    x_all.append(x_center_current)
+                    y_all.append(y_center_current)
+
 
                 prev_m = m
                 prev_c = c
                 prev_d = d
 
             if epoch > 0:
-                local_x.extend(dict_frames[key_x])
-                local_y.extend(dict_frames[key_y])
+                local_x += dict_frames[key_x]
+                local_y += dict_frames[key_y]
 
-            clear_x, clear_y = remove_val_outside_standard_dev(local_x, local_y)
-
-            #x_stat_ok = get_only_statistically_viable_coords(clear_x)
-            #y_stat_ok = get_only_statistically_viable_coords(clear_y)
-
-            x_centroid = hierarchical_clustering(clear_x)
-            y_centroid = hierarchical_clustering(clear_y)
-
-            dict_frames.update({key_x: clear_x})
-            dict_frames.update({key_y: clear_y})
-
-            centers.append([x_centroid, y_centroid])
-            x_centers.append(x_centroid)
-            y_centers.append(y_centroid)
+            dict_frames.update({key_x: local_x})
+            dict_frames.update({key_y: local_y})
 
             # Now update the previous frame and previous points
             old_gray = gray.copy()
@@ -328,7 +301,7 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
     video_captured.release()
     cv2.destroyAllWindows()
 
-    return centers, x_centers, y_centers, dict_frames
+    return dict_frames, x_all, y_all
 
 class Labeler:
 
@@ -338,9 +311,9 @@ class Labeler:
     y_center_all = []
 
     video_number = 0
-    max_video_number = 4
+    max_video_number = 0
 
-    n_of_epochs = 5
+    n_of_epochs = 1
 
     dict_frames = {}
 
@@ -361,32 +334,59 @@ class Labeler:
         width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
         height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-        centers, x_centers, y_centers, dict_frames = get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number, epoch)
-
-        pitch_yaw = []
-
-        print("\n")
-
-        for i in range(len(centers)):
-            progress = int(((i+1) / len(centers)) * 100)
-            sys.stdout.write("\rCalulating pitch and yaw angles, progress: %r" % progress + "%")
-            sys.stdout.flush()
-
-            x = centers[i][0]
-            y = centers[i][1]
-
-            pitch, yaw = calculate_pitch_and_yaw([x, y], [width/2, height/2], focal_length_pixel)
-            pitch_yaw.append([pitch, yaw])
-
-        print("\n")
-
-        pitch_yaw_reshaped = str(pitch_yaw).replace("], [", "\n").replace(", ", " ").replace("[[", "").replace("]]", "")
-
-        f = open(str(video_number)+".txt", "w")
-        f.write(str(pitch_yaw_reshaped))
-        f.close()
+        dict_frames, x_center_all, y_center_all = get_center_of_direction_for_each_frame(video_captured, dict_frames, x_center_all, y_center_all, feature_params, lk_params, video_number, epoch)
 
         if epoch == n_of_epochs:
+
+            pitch_yaw = []
+
+            print("\n")
+
+            for i in range(int(len(dict_frames)/2)):
+
+                i += 1
+
+                sys.stdout.write("\rCalulating pitch and yaw angles, frame: %r" % i + " / %r " % int(len(dict_frames) / 2))
+                sys.stdout.flush()
+
+                x_key = str(i) + "-x"
+                y_key = str(i) + "-y"
+
+                #BETTER CLEAN UP, CONSIDER COUPLE OF COORDINATES, NOT ONLY X, Y SEPARATELY
+
+                # Add all the other values
+                x_saved = dict_frames[x_key] + x_center_all
+                y_saved = dict_frames[y_key] + y_center_all
+
+                x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
+                x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+
+                """
+                if i < 5:
+                    plt.scatter(x_in_standard_dev, y_in_standard_dev)
+                    plt.title(i)
+                    plt.show()
+                    #plt.close()
+                """
+
+                x = hierarchical_clustering(x_in_standard_dev)
+                y = hierarchical_clustering(y_in_standard_dev)
+
+                #x = np.average(x_in_standard_dev)
+                #y = np.average(y_in_standard_dev)
+
+                pitch, yaw = calculate_pitch_and_yaw([x, y], [width/2, height/2], focal_length_pixel)
+                pitch_yaw.append([pitch, yaw])
+
+            print("\n")
+
+            pitch_yaw_reshaped = str(pitch_yaw).replace("], [", "\n").replace(", ", " ").replace("[[", "").replace("]]", "")
+
+            f = open(str(video_number)+".txt", "w")
+            f.write(str(pitch_yaw_reshaped))
+            f.close()
+
+
             epoch = -1
             video_number += 1
             x_center_all = []
