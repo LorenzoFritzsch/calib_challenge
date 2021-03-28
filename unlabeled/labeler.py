@@ -7,18 +7,30 @@ import scipy.stats
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import AgglomerativeClustering
+import tensorflow as tf
 
-import matplotlib.pyplot as plt
+tf.__version__
+
 
 np.seterr(divide='ignore', invalid='ignore')
+np.set_printoptions(threshold=np.inf)
+
+n_of_epochs = 100
+n_of_neurons = 24
+n_of_output = 1
+
+n_of_feature_per_row = 4
+
 
 def apply_gaussian_filter(old_gray, gray):
     old_gray_blurred = cv2.GaussianBlur(old_gray, (5, 5), 0)
     gray_blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     return old_gray_blurred, gray_blurred
 
+
 def bilateral_filter(old_gray, gray):
     return cv2.bilateralFilter(old_gray, 9, 75, 75), cv2.bilateralFilter(gray, 9, 75, 75)
+
 
 def get_standard_deviation(dataset):
     mean = np.average(dataset)
@@ -33,8 +45,9 @@ def remove_nan_or_inf_values_from_dataset(dataset):
             dataset_cleared.append(value)
     return dataset_cleared
 
+
 def remove_val_outside_standard_dev(dataset_x, dataset_y):
-    #Backward Elimination with standard deviation as significance level.
+    # Backward Elimination with standard deviation as significance level.
 
     max_val_x, min_val_x = get_max_min_value_considering_standard_dev(dataset_x)
     max_val_y, min_val_y = get_max_min_value_considering_standard_dev(dataset_y)
@@ -49,11 +62,12 @@ def remove_val_outside_standard_dev(dataset_x, dataset_y):
         x = dataset_x[i]
         y = dataset_y[i]
 
-        if x < max_val_x and y < max_val_y and x > min_val_x and y > min_val_y:
+        if max_val_x > x > min_val_x and max_val_y > y > min_val_y:
             cleared_dataset_x.append(x)
             cleared_dataset_y.append(y)
 
     return cleared_dataset_x, cleared_dataset_y
+
 
 def get_only_statistically_viable_coords(dataset_x, dataset_y):
     average_x = np.average(dataset_x)
@@ -68,10 +82,7 @@ def get_only_statistically_viable_coords(dataset_x, dataset_y):
     all_probabilities_x = []
     all_probabilities_y = []
 
-    len_dataset_x = len(dataset_x)
-    len_dataset_y = len(dataset_y)
-
-    for i in range(len(dataset_x)): #dataset_x and dataset_y have the same size
+    for i in range(len(dataset_x)):  # dataset_x and dataset_y have the same size
 
         x = dataset_x[i]
         y = dataset_y[i]
@@ -82,7 +93,7 @@ def get_only_statistically_viable_coords(dataset_x, dataset_y):
     average_probability_x = np.average(all_probabilities_x)
     average_probability_y = np.average(all_probabilities_y)
 
-    for i in range(len(all_probabilities_x)): #all_probabilities_x and all_probabilities_y have the same size
+    for i in range(len(all_probabilities_x)):  # all_probabilities_x and all_probabilities_y have the same size
         probability_x = all_probabilities_x[i]
         probability_y = all_probabilities_y[i]
 
@@ -104,6 +115,7 @@ def get_max_min_value_considering_standard_dev(dataset):
 
     return max_val, min_val
 
+
 def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
 
     len_dataset_x = len(dataset_x)
@@ -121,6 +133,7 @@ def remove_val_outside_bound(dataset_x, dataset_y, max_x, max_y):
 
     return dataset_cleared_x, dataset_cleared_y
 
+
 def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     q_one = m_one * c_one - d_one
     q_two = m_two * c_two - d_two
@@ -137,6 +150,7 @@ def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     y_center = abs(y_det / determinant)
     return x_center, y_center
 
+"""
 def calculate_pitch_and_yaw(center_direction, center_image, focal_length):
     x_center_direction = center_direction[0]
     y_center_direction = center_direction[1]
@@ -151,6 +165,14 @@ def calculate_pitch_and_yaw(center_direction, center_image, focal_length):
     yaw = math.atan(x_distance / focal_length)
 
     return pitch, yaw
+"""
+
+
+def calculate_ang(center_direction, center_image, focal_length):
+
+    distance = abs(center_image - center_direction)
+    ang = math.atan(distance / focal_length)
+    return ang
 
 def get_all_frames(video_captured):
     all_frames = []
@@ -162,6 +184,7 @@ def get_all_frames(video_captured):
         all_frames.append(frame)
     return all_frames
 
+
 def get_k_for_kmeans(dataset):
 
     range_n_clusters = range(2, 5)
@@ -170,8 +193,8 @@ def get_k_for_kmeans(dataset):
     previous_silh_avg = 0.0
 
     for n_clusters in range_n_clusters:
-        clusterer = KMeans(n_clusters=n_clusters)
-        cluster_labels = clusterer.fit_predict(dataToFit)
+        cluster = KMeans(n_clusters=n_clusters)
+        cluster_labels = cluster.fit_predict(dataToFit)
         silhouette_avg = silhouette_score(dataToFit, cluster_labels)
 
         if silhouette_avg > previous_silh_avg:
@@ -179,6 +202,7 @@ def get_k_for_kmeans(dataset):
             best_clusters = n_clusters
 
     return best_clusters
+
 
 def hierarchical_clustering(dataset):
 
@@ -190,7 +214,7 @@ def hierarchical_clustering(dataset):
     dataset = np.array(dataset).reshape(-1, 1)
     clustering = AgglomerativeClustering(n_clusters=number_of_clusters, affinity='euclidean', linkage='ward').fit(dataset)
     clusters_list = clustering.labels_
-    most_populated_cluster =  statistics.mode(clusters_list)
+    most_populated_cluster = statistics.mode(clusters_list)
 
     items_in_most_populated_cluster = []
 
@@ -202,17 +226,86 @@ def hierarchical_clustering(dataset):
     return np.average(items_in_most_populated_cluster)
 
 
-def get_center_of_direction_for_each_frame(video_captured, dict_frames, x_all, y_all, feature_params, lk_params, video_number, epoch):
+def fix_x_y_centers(dataset_x, dataset_y):
+
+    average_x = np.average(dataset_x)
+    average_y = np.average(dataset_y)
+
+    standard_dev_x = get_standard_deviation(dataset_x)
+    standard_dev_y = get_standard_deviation(dataset_y)
+
+    x_max = average_x + standard_dev_x
+    x_min = average_x - standard_dev_x
+
+    y_max = average_y + standard_dev_y
+    y_min = average_y - standard_dev_y
+
+    for i in range(len(dataset_x)):  # dataset_x and dataset_y have the same size
+
+        x = dataset_x[i]
+        y = dataset_y[i]
+
+        x_outside_standard_dev = x > x_max or x < x_min
+        y_outside_standard_dev = y > y_max or y < y_min
+
+        if x_outside_standard_dev or y_outside_standard_dev:
+            dataset_x[i] = average_x
+            dataset_y[i] = average_y
+
+    return dataset_x, dataset_y
+
+
+def get_minimums_values(dataset, n_of_vals):
+
+    coord_current_mean = np.average(dataset)
+    # Get values nearest to avg
+    distances = []
+    for val in dataset:
+        distance = abs(val - coord_current_mean)
+        distances.append(distance)
+
+    minimums = []
+
+    for i in range(n_of_vals):
+        min = np.argmin(distances)
+        distances[min] = math.inf
+        minimums.append(dataset[min])
+
+    return minimums
+
+
+def create_train_dataset(coords_per_frame, coords_average, center_image):
+    # Create the train set
+    train_set = []
+    for i in range(len(coords_per_frame)):
+        row = []
+        coord_all = coords_per_frame[i]
+
+        minimums = get_minimums_values(coord_all, 5)
+
+        minimums_average = np.average(minimums)
+
+        calculated_ang = calculate_ang(minimums_average, center_image, 910.0)
+
+        row.append(minimums_average)
+        row.append(coords_average)
+        row.append(910.0)
+        row.append(center_image)
+        row = np.array(row).reshape(1, n_of_feature_per_row)
+        train_set.append(row)
+
+    return train_set
+
+
+def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number):
     round = 1
 
     # Get frame dimensions
     width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
     height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-
     frames = get_all_frames(video_captured)
 
-    #ret, old_frame = video_captured.read()
     old_gray = cv2.cvtColor(frames[1], cv2.COLOR_BGR2GRAY)
     p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
 
@@ -257,7 +350,7 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, x_all, y
                 else:
                     continue
 
-                if prev_m == None:
+                if prev_m is None:
                     prev_m = m
                     prev_c = c
                     prev_d = d
@@ -271,17 +364,9 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, x_all, y
                     local_x.append(x_center_current)
                     local_y.append(y_center_current)
 
-                    x_all.append(x_center_current)
-                    y_all.append(y_center_current)
-
-
                 prev_m = m
                 prev_c = c
                 prev_d = d
-
-            if epoch > 0:
-                local_x += dict_frames[key_x]
-                local_y += dict_frames[key_y]
 
             dict_frames.update({key_x: local_x})
             dict_frames.update({key_y: local_y})
@@ -293,27 +378,20 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, x_all, y
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            sys.stdout.write("\033[93m" + "\rVideo: %r" % video_number + " Frame: %r" % round + " Epoch: %r" % epoch + "\033[0m")
+            sys.stdout.write("\033[93m" + "\rVideo: %r" % video_number + " Frame: %r" % round + "\033[0m")
             sys.stdout.flush()
 
             round += 1
 
-    video_captured.release()
-    cv2.destroyAllWindows()
+    return dict_frames
 
-    return dict_frames, x_all, y_all
 
 class Labeler:
 
     focal_length_pixel = 910
 
-    x_center_all = []
-    y_center_all = []
-
     video_number = 0
-    max_video_number = 0
-
-    n_of_epochs = 1
+    max_video_number = 4
 
     dict_frames = {}
 
@@ -323,9 +401,7 @@ class Labeler:
     # Parameters for lucas kanade optical flow
     lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-    epoch = 0
-
-    while(True):
+    while True:
 
         if video_number > max_video_number:
             break
@@ -334,63 +410,110 @@ class Labeler:
         width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
         height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-        dict_frames, x_center_all, y_center_all = get_center_of_direction_for_each_frame(video_captured, dict_frames, x_center_all, y_center_all, feature_params, lk_params, video_number, epoch)
+        x_center_image = width / 2
+        y_center_image = height / 2
 
-        if epoch == n_of_epochs:
+        dict_frames = get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number)
 
-            pitch_yaw = []
+        x_per_frame = []
+        y_per_frame = []
 
-            print("\n")
+        x_very_all_for_avg = []
+        y_very_all_for_avg = []
 
-            for i in range(int(len(dict_frames)/2)):
+        for i in range(int(len(dict_frames)/2)):
 
-                i += 1
+            i += 1
 
-                sys.stdout.write("\rCalulating pitch and yaw angles, frame: %r" % i + " / %r " % int(len(dict_frames) / 2))
-                sys.stdout.flush()
+            x_key = str(i) + "-x"
+            y_key = str(i) + "-y"
 
-                x_key = str(i) + "-x"
-                y_key = str(i) + "-y"
+            x_saved = dict_frames[x_key]
+            y_saved = dict_frames[y_key]
 
-                #BETTER CLEAN UP, CONSIDER COUPLE OF COORDINATES, NOT ONLY X, Y SEPARATELY
+            x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
+            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
 
-                # Add all the other values
-                x_saved = dict_frames[x_key] + x_center_all
-                y_saved = dict_frames[y_key] + y_center_all
+            x_per_frame.append(x_in_standard_dev)
+            x_very_all_for_avg += x_in_standard_dev
 
-                x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
-                x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+            y_per_frame.append(y_in_standard_dev)
+            y_very_all_for_avg += y_in_standard_dev
 
-                """
-                if i < 5:
-                    plt.scatter(x_in_standard_dev, y_in_standard_dev)
-                    plt.title(i)
-                    plt.show()
-                    #plt.close()
-                """
+        x_average_all = np.average(x_very_all_for_avg)
+        y_average_all = np.average(y_very_all_for_avg)
 
-                x = hierarchical_clustering(x_in_standard_dev)
-                y = hierarchical_clustering(y_in_standard_dev)
+        # Create the train set
+        train_set_x = create_train_dataset(x_per_frame, x_average_all, x_center_image)
+        train_set_y = create_train_dataset(y_per_frame, y_average_all, y_center_image)
 
-                #x = np.average(x_in_standard_dev)
-                #y = np.average(y_in_standard_dev)
+        pitches_yaws = np.loadtxt('../labeled/' + str(video_number) + '.txt')
+        pitches = []
+        yaws = []
+        for i in pitches_yaws:
+            pitches.append(i[0])
+            yaws.append([i[1]])
 
-                pitch, yaw = calculate_pitch_and_yaw([x, y], [width/2, height/2], focal_length_pixel)
-                pitch_yaw.append([pitch, yaw])
+        train_set_x = np.array(train_set_x).reshape(int(len(dict_frames)/2), n_of_feature_per_row)
+        train_set_y = np.array(train_set_y).reshape(int(len(dict_frames)/2), n_of_feature_per_row)
 
-            print("\n")
+        pitches = np.array(pitches).reshape(-1, 1).astype('float32')
+        yaws = np.array(yaws).reshape(-1, 1).astype('float32')
 
-            pitch_yaw_reshaped = str(pitch_yaw).replace("], [", "\n").replace(", ", " ").replace("[[", "").replace("]]", "")
+        # Initialize the ANNs
 
-            f = open(str(video_number)+".txt", "w")
-            f.write(str(pitch_yaw_reshaped))
-            f.close()
+        ann_pitch = tf.keras.models.Sequential()
+        ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+        ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+        ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
+        ann_pitch.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
+        ann_yaw = tf.keras.models.Sequential()
+        ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+        ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+        ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
+        ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-            epoch = -1
-            video_number += 1
-            x_center_all = []
-            y_center_all = []
-            dict_frames = {}
+        ann_pitch.fit(train_set_y, pitches, batch_size=32, epochs=n_of_epochs)
+        ann_yaw.fit(train_set_x, yaws, batch_size=32, epochs=n_of_epochs)
 
-        epoch += 1
+        # Predict
+        pitch_yaw_predicted = []
+        for i in range(int(len(dict_frames)/2)):
+
+            i += 1
+
+            if i > int(len(dict_frames)/2):
+                break
+
+            print("Predicting ... " + str(i) + "/" + str(int(len(dict_frames)/2)))
+
+            x_key = str(i) + "-x"
+            y_key = str(i) + "-y"
+
+            x_saved = dict_frames[x_key]
+            y_saved = dict_frames[y_key]
+
+            x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
+            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+
+            minimums_x = get_minimums_values(x_in_standard_dev, 5)
+            minimums_y = get_minimums_values(y_in_standard_dev, 5)
+
+            minimums_x_avg = np.average(minimums_x)
+            minimums_y_avg = np.average(minimums_y)
+
+            x_calc = np.average(x_in_standard_dev)
+            y_calc = np.average(y_in_standard_dev)
+
+            predicted_pitch = ann_pitch.predict(np.array([y_calc, y_average_all, 910.0, y_center_image]).reshape(1, 4))
+            predicted_yaw = ann_yaw.predict(np.array([x_calc, x_average_all, 910.0, x_center_image]).reshape(1, 4))
+
+            pitch_yaw_predicted.append([predicted_pitch, predicted_yaw])
+
+        f = open(str(video_number)+".txt", "w")
+        f.write(str(np.array(pitch_yaw_predicted).reshape(-1, 2)).replace("[", "").replace("]", ""))
+        f.close()
+
+        video_number += 1
+        dict_frames = {}
