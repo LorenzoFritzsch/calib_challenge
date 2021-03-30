@@ -312,13 +312,14 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
 
     print("\n")
     x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(dataset_x, dataset_y)
+    print(len(x_statistically_viable), len(y_statistically_viable))
     x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
     print("\n")
 
 
-    for i in range(int(len(dataset_x))):
+    for i in range(int(len(x_in_standard_dev))):
 
-        sys.stdout.write("\rCalculating [rmOutSD] %r" % i + " / %r" % len(dataset_x))
+        sys.stdout.write("\rCalculating [rmOutSD] %r" % i + " / %r" % len(x_in_standard_dev))
         sys.stdout.flush()
 
         x_per_frame.append(x_in_standard_dev)
