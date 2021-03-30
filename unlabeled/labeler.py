@@ -319,7 +319,7 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
 
     for i in range(int(len(x_in_standard_dev))):
 
-        sys.stdout.write("\rCalculating [rmOutSD] %r" % i + " / %r" % len(x_in_standard_dev))
+        sys.stdout.write("\rCalculating [] %r" % i + " / %r" % len(x_in_standard_dev))
         sys.stdout.flush()
 
         x_per_frame.append(x_in_standard_dev)
@@ -395,15 +395,22 @@ def train_ann_on_labeled_videos():
     x_saved = np.array(x_saved).reshape(-1, 1)
     y_saved = np.array(y_saved).reshape(-1, 1)
 
-    x_per_frame, x_average_all, y_per_frame, y_average_all = get_x_y_per_frame_and_average(x_saved, y_saved)
+    print("\n")
+    x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(dataset_x, dataset_y)
+    print("\n")
+    x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+    print("\n")
+
+    x_all_average = np.average(x_in_standard_dev)
+    y_all_average = np.average(y_in_standard_dev)
 
     # Create the train set
 
     x_center_image = width / 2
     y_center_image = height / 2
 
-    train_set_x = create_train_dataset(x_per_frame, x_average_all, x_center_image)
-    train_set_y = create_train_dataset(y_per_frame, y_average_all, y_center_image)
+    train_set_x = create_train_dataset(x_in_standard_dev, x_average_all, x_center_image)
+    train_set_y = create_train_dataset(y_in_standard_dev, y_average_all, y_center_image)
 
     # Load labeled pitches and yaws
     pitches_yaws = np.loadtxt('../labeled/' + str(video_number) + '.txt')
