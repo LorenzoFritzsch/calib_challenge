@@ -21,6 +21,17 @@ n_of_output = 1
 
 n_of_feature_per_row = 4
 
+focal_length_pixel = 910
+
+video_number = 0
+max_video_number = 4
+
+# params for ShiTomasi corner detection
+feature_params = dict(maxCorners=0, qualityLevel=0.01, minDistance=15, blockSize=5)
+
+# Parameters for lucas kanade optical flow
+lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
 
 def apply_gaussian_filter(old_gray, gray):
     old_gray_blurred = cv2.GaussianBlur(old_gray, (5, 5), 0)
@@ -59,6 +70,9 @@ def remove_val_outside_standard_dev(dataset_x, dataset_y):
 
     for i in range(len_dataset_x):
 
+        sys.stdout.write("\rCalculating [rmOutSD] %r" % i + " / %r" % len_dataset_x)
+        sys.stdout.flush()
+
         x = dataset_x[i]
         y = dataset_y[i]
 
@@ -83,6 +97,9 @@ def get_only_statistically_viable_coords(dataset_x, dataset_y):
     all_probabilities_y = []
 
     for i in range(len(dataset_x)):  # dataset_x and dataset_y have the same size
+
+        sys.stdout.write("\rCalculating [StatViable] %r" % i + " / %r" % len(dataset_x))
+        sys.stdout.flush()
 
         x = dataset_x[i]
         y = dataset_y[i]
@@ -150,23 +167,6 @@ def cramer(m_one, c_one, d_one, m_two, c_two, d_two):
     y_center = abs(y_det / determinant)
     return x_center, y_center
 
-"""
-def calculate_pitch_and_yaw(center_direction, center_image, focal_length):
-    x_center_direction = center_direction[0]
-    y_center_direction = center_direction[1]
-
-    x_center_image = center_image[0]
-    y_center_image = center_image[1]
-
-    y_distance = abs(y_center_image - y_center_direction)
-    x_distance = abs(x_center_image - x_center_direction)
-
-    pitch = math.atan(y_distance / focal_length)
-    yaw = math.atan(x_distance / focal_length)
-
-    return pitch, yaw
-"""
-
 
 def calculate_ang(center_direction, center_image, focal_length):
 
@@ -174,10 +174,10 @@ def calculate_ang(center_direction, center_image, focal_length):
     ang = math.atan(distance / focal_length)
     return ang
 
+
 def get_all_frames(video_captured):
     all_frames = []
     while video_captured.isOpened():
-
         ret, frame = video_captured.read()
         if not ret:
             break
@@ -278,6 +278,11 @@ def create_train_dataset(coords_per_frame, coords_average, center_image):
     # Create the train set
     train_set = []
     for i in range(len(coords_per_frame)):
+
+
+        sys.stdout.write("\rCalculating [train_ds] %r" % i + " / %r" % len(coords_per_frame))
+        sys.stdout.flush()
+
         row = []
         coord_all = coords_per_frame[i]
 
@@ -297,8 +302,129 @@ def create_train_dataset(coords_per_frame, coords_average, center_image):
     return train_set
 
 
-def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number):
-    round = 1
+def get_x_y_per_frame_and_average(dataset_x, dataset_y):
+
+    x_per_frame = []
+    y_per_frame = []
+
+    x_very_all_for_avg = []
+    y_very_all_for_avg = []
+
+    print("\n")
+    x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(dataset_x, dataset_y)
+    x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+    print("\n")
+
+
+    for i in range(int(len(dataset_x))):
+
+        sys.stdout.write("\rCalculating [rmOutSD] %r" % i + " / %r" % len(dataset_x))
+        sys.stdout.flush()
+
+        x_per_frame.append(x_in_standard_dev)
+        x_very_all_for_avg += x_in_standard_dev
+
+        y_per_frame.append(y_in_standard_dev)
+        y_very_all_for_avg += y_in_standard_dev
+
+    x_all_average = np.average(x_very_all_for_avg)
+    y_all_average = np.average(y_very_all_for_avg)
+
+    return x_per_frame, x_all_average, y_per_frame, y_all_average
+
+
+def train_ann(train_set_x, yaws, train_set_y, pitches):
+    ann_pitch = tf.keras.models.Sequential()
+    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+    ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
+    ann_pitch.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    ann_yaw = tf.keras.models.Sequential()
+    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+    ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
+    ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    ann_pitch.fit(train_set_y, pitches, batch_size=32, epochs=n_of_epochs)
+    ann_yaw.fit(train_set_x, yaws, batch_size=32, epochs=n_of_epochs)
+
+    return ann_pitch, ann_yaw
+
+
+def get_x_y_dataset_from_dict(dict_frames):
+
+    x_saved = []
+    y_saved = []
+
+    for i in range(int(len(dict_frames) / 2)):
+        i += 1
+
+        x_key = str(i) + "-x"
+        y_key = str(i) + "-y"
+
+        x_saved.extend(dict_frames[x_key])
+        y_saved.extend(dict_frames[y_key])
+
+    return x_saved, y_saved
+
+
+def train_ann_on_labeled_videos():
+
+    n_of_labeled_videos = 4
+    width = 0
+    height = 0
+
+    x_saved = []
+    y_saved = []
+
+    for video in range(n_of_labeled_videos):
+        print("\nLearning from video " + str(video) + " of 4")
+        video_captured = cv2.VideoCapture('../labeled/' + str(video) + '.hevc')
+
+        width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
+
+        dict_frames = get_center_of_direction_for_each_frame(video_captured, video)
+
+        x_local, y_local = get_x_y_dataset_from_dict(dict_frames)
+        x_saved.extend(x_local)
+        y_saved.extend(y_local)
+
+    x_saved = np.array(x_saved).reshape(-1, 1)
+    y_saved = np.array(y_saved).reshape(-1, 1)
+
+    x_per_frame, x_average_all, y_per_frame, y_average_all = get_x_y_per_frame_and_average(x_saved, y_saved)
+
+    # Create the train set
+
+    x_center_image = width / 2
+    y_center_image = height / 2
+
+    train_set_x = create_train_dataset(x_per_frame, x_average_all, x_center_image)
+    train_set_y = create_train_dataset(y_per_frame, y_average_all, y_center_image)
+
+    # Load labeled pitches and yaws
+    pitches_yaws = np.loadtxt('../labeled/' + str(video_number) + '.txt')
+    pitches = []
+    yaws = []
+    for i in pitches_yaws:
+        pitches.append(i[0])
+        yaws.append([i[1]])
+
+    train_set_x = (np.array(train_set_x).reshape(-1, n_of_feature_per_row))
+    train_set_y = (np.array(train_set_y).reshape(-1, n_of_feature_per_row))
+
+    pitches = np.array(pitches).reshape(-1, 1).astype('float32')
+    yaws = np.array(yaws).reshape(-1, 1).astype('float32')
+
+    ann_pitch, ann_yaw = train_ann(train_set_x, yaws, train_set_y, pitches)
+
+    return ann_pitch, ann_yaw
+
+
+def get_center_of_direction_for_each_frame(video_captured, video_number):
+    scanning_frame = 1
 
     # Get frame dimensions
     width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -306,15 +432,17 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
 
     frames = get_all_frames(video_captured)
 
+    dict_frames = {}
+
     old_gray = cv2.cvtColor(frames[1], cv2.COLOR_BGR2GRAY)
-    p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+    p0 = cv2.goodFeaturesToTrack(old_gray, mask=None, **feature_params)
 
     centers = []
 
     for frame in frames:
 
-        key_x = str(round)+"-x"
-        key_y = str(round)+"-y"
+        key_x = str(scanning_frame)+"-x"
+        key_y = str(scanning_frame)+"-y"
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -378,104 +506,35 @@ def get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            sys.stdout.write("\033[93m" + "\rVideo: %r" % video_number + " Frame: %r" % round + "\033[0m")
+            sys.stdout.write("\033[93m" + "\rVideo: %r" % video_number + " Frame: %r" % scanning_frame + "\033[0m")
             sys.stdout.flush()
 
-            round += 1
+            scanning_frame += 1
 
     return dict_frames
 
 
 class Labeler:
 
-    focal_length_pixel = 910
+    # Train ANN
+    ann_pitch, ann_yaw = train_ann_on_labeled_videos()
 
-    video_number = 0
-    max_video_number = 4
-
-    dict_frames = {}
-
-    # params for ShiTomasi corner detection
-    feature_params = dict(maxCorners=0, qualityLevel=0.01, minDistance=15, blockSize=5)
-
-    # Parameters for lucas kanade optical flow
-    lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-
-    while True:
-
-        if video_number > max_video_number:
-            break
+    for video_number in range(max_video_number):
 
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
+
+        dict_frames = get_center_of_direction_for_each_frame(video_captured, video_number)
+
+        x_video, y_video = get_x_y_dataset_from_dict(dict_frames)
+
+        x_per_frame, x_average_all, y_per_frame, y_average_all = get_x_y_per_frame_and_average(x_video, y_video)
+
+        # Create the train set
         width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
         height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
         x_center_image = width / 2
         y_center_image = height / 2
-
-        dict_frames = get_center_of_direction_for_each_frame(video_captured, dict_frames, feature_params, lk_params, video_number)
-
-        x_per_frame = []
-        y_per_frame = []
-
-        x_very_all_for_avg = []
-        y_very_all_for_avg = []
-
-        for i in range(int(len(dict_frames)/2)):
-
-            i += 1
-
-            x_key = str(i) + "-x"
-            y_key = str(i) + "-y"
-
-            x_saved = dict_frames[x_key]
-            y_saved = dict_frames[y_key]
-
-            x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
-            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
-
-            x_per_frame.append(x_in_standard_dev)
-            x_very_all_for_avg += x_in_standard_dev
-
-            y_per_frame.append(y_in_standard_dev)
-            y_very_all_for_avg += y_in_standard_dev
-
-        x_average_all = np.average(x_very_all_for_avg)
-        y_average_all = np.average(y_very_all_for_avg)
-
-        # Create the train set
-        train_set_x = create_train_dataset(x_per_frame, x_average_all, x_center_image)
-        train_set_y = create_train_dataset(y_per_frame, y_average_all, y_center_image)
-
-        pitches_yaws = np.loadtxt('../labeled/' + str(video_number) + '.txt')
-        pitches = []
-        yaws = []
-        for i in pitches_yaws:
-            pitches.append(i[0])
-            yaws.append([i[1]])
-
-        train_set_x = np.array(train_set_x).reshape(int(len(dict_frames)/2), n_of_feature_per_row)
-        train_set_y = np.array(train_set_y).reshape(int(len(dict_frames)/2), n_of_feature_per_row)
-
-        pitches = np.array(pitches).reshape(-1, 1).astype('float32')
-        yaws = np.array(yaws).reshape(-1, 1).astype('float32')
-
-        # Initialize the ANNs
-
-        ann_pitch = tf.keras.models.Sequential()
-        ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
-        ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
-        ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
-        ann_pitch.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-        ann_yaw = tf.keras.models.Sequential()
-        ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
-        ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
-        ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
-        ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-        ann_pitch.fit(train_set_y, pitches, batch_size=32, epochs=n_of_epochs)
-        ann_yaw.fit(train_set_x, yaws, batch_size=32, epochs=n_of_epochs)
 
         # Predict
         pitch_yaw_predicted = []
@@ -495,7 +554,8 @@ class Labeler:
             y_saved = dict_frames[y_key]
 
             x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
-            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable,
+                                                                                   y_statistically_viable)
 
             minimums_x = get_minimums_values(x_in_standard_dev, 5)
             minimums_y = get_minimums_values(y_in_standard_dev, 5)
@@ -515,5 +575,4 @@ class Labeler:
         f.write(str(np.array(pitch_yaw_predicted).reshape(-1, 2)).replace("[", "").replace("]", ""))
         f.close()
 
-        video_number += 1
         dict_frames = {}
