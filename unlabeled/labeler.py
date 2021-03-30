@@ -396,7 +396,7 @@ def train_ann_on_labeled_videos():
     y_saved = np.array(y_saved).reshape(-1, 1)
 
     print("\n")
-    x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(dataset_x, dataset_y)
+    x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
     print("\n")
     x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
     print("\n")
