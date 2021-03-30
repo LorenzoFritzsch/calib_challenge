@@ -401,8 +401,8 @@ def train_ann_on_labeled_videos():
     x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
     print("\n")
 
-    x_all_average = np.average(x_in_standard_dev)
-    y_all_average = np.average(y_in_standard_dev)
+    x_average_all = np.average(x_in_standard_dev)
+    y_average_all = np.average(y_in_standard_dev)
 
     # Create the train set
 
