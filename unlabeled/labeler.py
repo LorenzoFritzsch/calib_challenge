@@ -16,12 +16,12 @@ np.seterr(divide='ignore', invalid='ignore')
 np.set_printoptions(threshold=np.inf)
 
 n_of_epochs = 100
-n_of_neurons = 24
+n_of_neurons = 3
 n_of_output = 1
 
 n_of_feature_per_row = 4
 
-focal_length_pixel = 910
+focal_length_pixel = 910.0
 
 video_number = 0
 max_video_number = 4
@@ -70,9 +70,6 @@ def remove_val_outside_standard_dev(dataset_x, dataset_y):
 
     for i in range(len_dataset_x):
 
-        sys.stdout.write("\rCalculating [rmOutSD] %r" % i + " / %r" % len_dataset_x)
-        sys.stdout.flush()
-
         x = dataset_x[i]
         y = dataset_y[i]
 
@@ -97,9 +94,6 @@ def get_only_statistically_viable_coords(dataset_x, dataset_y):
     all_probabilities_y = []
 
     for i in range(len(dataset_x)):  # dataset_x and dataset_y have the same size
-
-        sys.stdout.write("\rCalculating [StatViable] %r" % i + " / %r" % len(dataset_x))
-        sys.stdout.flush()
 
         x = dataset_x[i]
         y = dataset_y[i]
@@ -279,10 +273,6 @@ def create_train_dataset(coords_per_frame, coords_average, center_image):
     train_set = []
     for i in range(len(coords_per_frame)):
 
-
-        sys.stdout.write("\rCalculating [train_ds] %r" % i + " / %r" % len(coords_per_frame))
-        sys.stdout.flush()
-
         row = []
         coord_all = coords_per_frame[i]
 
@@ -310,12 +300,8 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
     x_very_all_for_avg = []
     y_very_all_for_avg = []
 
-    print("\n")
     x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(dataset_x, dataset_y)
-    print(len(x_statistically_viable), len(y_statistically_viable))
     x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
-    print("\n")
-
 
     for i in range(int(len(x_in_standard_dev))):
 
@@ -364,10 +350,38 @@ def get_x_y_dataset_from_dict(dict_frames):
         x_key = str(i) + "-x"
         y_key = str(i) + "-y"
 
-        x_saved.extend(dict_frames[x_key])
-        y_saved.extend(dict_frames[y_key])
+        x_saved.append(dict_frames[x_key])
+        y_saved.append(dict_frames[y_key])
 
     return x_saved, y_saved
+
+
+def get_good_vals_from(x_local, y_local):
+    x_good = []
+    y_good = []
+
+    x_all_list = []
+    y_all_list = []
+
+    for i in range(len(x_local)):
+        #Get good values frame by frame
+
+        sys.stdout.write("\rCalculating [GoodVals] %r" % (i+1) + " / %r" % len(x_local))
+        sys.stdout.flush()
+
+        x_current = x_local[i]
+        y_current = y_local[i]
+
+        x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_current, y_current)
+        x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
+
+        x_good.append(np.average(x_in_standard_dev))
+        y_good.append(np.average(y_in_standard_dev))
+
+        x_all_list.extend(x_in_standard_dev)
+        y_all_list.extend(y_in_standard_dev)
+
+    return x_good, y_good, x_all_list, y_all_list
 
 
 def train_ann_on_labeled_videos():
@@ -379,6 +393,12 @@ def train_ann_on_labeled_videos():
     x_saved = []
     y_saved = []
 
+    pitches = []
+    yaws = []
+
+    x_all_list = []
+    y_all_list = []
+
     for video in range(n_of_labeled_videos):
         print("\nLearning from video " + str(video) + " of 4")
         video_captured = cv2.VideoCapture('../labeled/' + str(video) + '.hevc')
@@ -388,43 +408,42 @@ def train_ann_on_labeled_videos():
 
         dict_frames = get_center_of_direction_for_each_frame(video_captured, video)
 
-        x_local, y_local = get_x_y_dataset_from_dict(dict_frames)
-        x_saved.extend(x_local)
-        y_saved.extend(y_local)
+        x_local, y_local = get_x_y_dataset_from_dict(dict_frames) # Returns 2d array of len n of frames
+
+        x_good, y_good, x_all, y_all = get_good_vals_from(x_local, y_local)
+
+        x_saved.extend(x_good)
+        y_saved.extend(y_good)
+        x_all_list.extend(x_all)
+        y_all_list.extend(y_all)
+
+        # Load labeled pitches and yaws
+        pitches_yaws = np.loadtxt('../labeled/' + str(video) + '.txt')
+        for i in pitches_yaws:
+            pitches.append(i[0])
+            yaws.append([i[1]])
 
     x_saved = np.array(x_saved).reshape(-1, 1)
     y_saved = np.array(y_saved).reshape(-1, 1)
 
-    print("\n")
-    x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
-    print("\n")
-    x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
-    print("\n")
-
-    x_average_all = np.average(x_in_standard_dev)
-    y_average_all = np.average(y_in_standard_dev)
+    x_average_all = np.average(x_all_list)
+    y_average_all = np.average(y_all_list)
 
     # Create the train set
 
     x_center_image = width / 2
     y_center_image = height / 2
 
-    train_set_x = create_train_dataset(x_in_standard_dev, x_average_all, x_center_image)
-    train_set_y = create_train_dataset(y_in_standard_dev, y_average_all, y_center_image)
-
-    # Load labeled pitches and yaws
-    pitches_yaws = np.loadtxt('../labeled/' + str(video_number) + '.txt')
-    pitches = []
-    yaws = []
-    for i in pitches_yaws:
-        pitches.append(i[0])
-        yaws.append([i[1]])
+    train_set_x = create_train_dataset(x_saved, x_average_all, x_center_image)
+    train_set_y = create_train_dataset(y_saved, y_average_all, y_center_image)
 
     train_set_x = (np.array(train_set_x).reshape(-1, n_of_feature_per_row))
     train_set_y = (np.array(train_set_y).reshape(-1, n_of_feature_per_row))
 
     pitches = np.array(pitches).reshape(-1, 1).astype('float32')
     yaws = np.array(yaws).reshape(-1, 1).astype('float32')
+
+    print(len(train_set_x), len(train_set_y), len(pitches), len(yaws))
 
     ann_pitch, ann_yaw = train_ann(train_set_x, yaws, train_set_y, pitches)
 
@@ -533,10 +552,6 @@ class Labeler:
 
         dict_frames = get_center_of_direction_for_each_frame(video_captured, video_number)
 
-        x_video, y_video = get_x_y_dataset_from_dict(dict_frames)
-
-        x_per_frame, x_average_all, y_per_frame, y_average_all = get_x_y_per_frame_and_average(x_video, y_video)
-
         # Create the train set
         width = video_captured.get(cv2.CAP_PROP_FRAME_WIDTH)
         height = video_captured.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -553,7 +568,8 @@ class Labeler:
             if i > int(len(dict_frames)/2):
                 break
 
-            print("Predicting ... " + str(i) + "/" + str(int(len(dict_frames)/2)))
+            sys.stdout.write("\rPredicting %r" % i + " / %r" % (len(dict_frames)/2))
+            sys.stdout.flush()
 
             x_key = str(i) + "-x"
             y_key = str(i) + "-y"
@@ -562,8 +578,7 @@ class Labeler:
             y_saved = dict_frames[y_key]
 
             x_statistically_viable, y_statistically_viable = get_only_statistically_viable_coords(x_saved, y_saved)
-            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable,
-                                                                                   y_statistically_viable)
+            x_in_standard_dev, y_in_standard_dev = remove_val_outside_standard_dev(x_statistically_viable, y_statistically_viable)
 
             minimums_x = get_minimums_values(x_in_standard_dev, 5)
             minimums_y = get_minimums_values(y_in_standard_dev, 5)
@@ -574,8 +589,8 @@ class Labeler:
             x_calc = np.average(x_in_standard_dev)
             y_calc = np.average(y_in_standard_dev)
 
-            predicted_pitch = ann_pitch.predict(np.array([y_calc, y_average_all, 910.0, y_center_image]).reshape(1, 4))
-            predicted_yaw = ann_yaw.predict(np.array([x_calc, x_average_all, 910.0, x_center_image]).reshape(1, 4))
+            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, 910.0, y_center_image]).reshape(1, 4))
+            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, 910.0, x_center_image]).reshape(1, 4))
 
             pitch_yaw_predicted.append([predicted_pitch, predicted_yaw])
 
