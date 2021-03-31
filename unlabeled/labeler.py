@@ -594,8 +594,8 @@ class Labeler:
             distance_x = abs(x_center_image - x_calc)
             distance_y = abs(y_center_image - y_calc)
 
-            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, distance_x, 910.0, y_center_image]).reshape(1, 4))
-            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, distance_y, 910.0, x_center_image]).reshape(1, 4))
+            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, distance_x, 910.0, y_center_image]).reshape(1, n_of_feature_per_row))
+            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, distance_y, 910.0, x_center_image]).reshape(1, n_of_feature_per_row))
 
             pitch_yaw_predicted.append([predicted_pitch, predicted_yaw])
 
