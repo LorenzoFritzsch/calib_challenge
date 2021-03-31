@@ -19,7 +19,7 @@ n_of_epochs = 100
 n_of_neurons = 3
 n_of_output = 1
 
-n_of_feature_per_row = 4
+n_of_feature_per_row = 5
 
 focal_length_pixel = 910.0
 
