@@ -19,7 +19,7 @@ n_of_epochs = 100
 n_of_neurons = 3
 n_of_output = 1
 
-n_of_feature_per_row = 5
+n_of_feature_per_row = 6
 
 focal_length_pixel = 910.0
 
@@ -286,6 +286,7 @@ def create_train_dataset(coords_per_frame, coords_average, center_image):
         row.append(minimums_average)
         row.append(coords_average)
         row.append(distance)
+        row.append(calculated_ang)
         row.append(910.0)
         row.append(center_image)
         row = np.array(row).reshape(1, n_of_feature_per_row)
@@ -594,8 +595,11 @@ class Labeler:
             distance_x = abs(x_center_image - x_calc)
             distance_y = abs(y_center_image - y_calc)
 
-            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, distance_x, 910.0, y_center_image]).reshape(1, n_of_feature_per_row))
-            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, distance_y, 910.0, x_center_image]).reshape(1, n_of_feature_per_row))
+            calculated_pitch = calculate_ang(y_calc, y_center_image, 910.0)
+            calculated_yaw = calculate_ang(x_calc, x_center_image, 910.0)
+
+            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, distance_x, calculated_pitch, 910.0, y_center_image]).reshape(1, n_of_feature_per_row))
+            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, distance_y, calculated_yaw, 910.0, x_center_image]).reshape(1, n_of_feature_per_row))
 
             pitch_yaw_predicted.append([predicted_pitch, predicted_yaw])
 
