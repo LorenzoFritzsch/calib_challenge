@@ -281,9 +281,11 @@ def create_train_dataset(coords_per_frame, coords_average, center_image):
         minimums_average = np.average(minimums)
 
         calculated_ang = calculate_ang(minimums_average, center_image, 910.0)
+        distance = abs(center_image - minimums_average)
 
         row.append(minimums_average)
         row.append(coords_average)
+        row.append(distance)
         row.append(910.0)
         row.append(center_image)
         row = np.array(row).reshape(1, n_of_feature_per_row)
@@ -589,8 +591,11 @@ class Labeler:
             x_calc = np.average(x_in_standard_dev)
             y_calc = np.average(y_in_standard_dev)
 
-            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, 910.0, y_center_image]).reshape(1, 4))
-            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, 910.0, x_center_image]).reshape(1, 4))
+            distance_x = abs(x_center_image - x_calc)
+            distance_y = abs(y_center_image - y_calc)
+
+            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, distance_x, 910.0, y_center_image]).reshape(1, 4))
+            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, distance_y, 910.0, x_center_image]).reshape(1, 4))
 
             pitch_yaw_predicted.append([predicted_pitch, predicted_yaw])
 
