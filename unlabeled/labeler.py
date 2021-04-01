@@ -326,12 +326,10 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
 def train_ann(train_set_x, yaws, train_set_y, pitches):
     ann_pitch = tf.keras.models.Sequential()
     ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
-    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
     ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
     ann_pitch.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
     ann_yaw = tf.keras.models.Sequential()
-    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
     ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
     ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
     ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
@@ -446,7 +444,6 @@ def train_ann_on_labeled_videos():
     pitches = np.array(pitches).reshape(-1, 1).astype('float32')
     yaws = np.array(yaws).reshape(-1, 1).astype('float32')
 
-    print(len(train_set_x), len(train_set_y), len(pitches), len(yaws))
 
     ann_pitch, ann_yaw = train_ann(train_set_x, yaws, train_set_y, pitches)
 
