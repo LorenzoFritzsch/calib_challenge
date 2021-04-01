@@ -334,8 +334,11 @@ def train_ann(train_set_x, yaws, train_set_y, pitches):
     ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
     ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    ann_pitch.fit(train_set_y, pitches, batch_size=32, epochs=n_of_epochs)
-    ann_yaw.fit(train_set_x, yaws, batch_size=32, epochs=n_of_epochs)
+
+    size_of_batch = len(train_set_x)
+
+    ann_pitch.fit(train_set_y, pitches, batch_size=size_of_batch, epochs=n_of_epochs)
+    ann_yaw.fit(train_set_x, yaws, batch_size=size_of_batch, epochs=n_of_epochs)
 
     return ann_pitch, ann_yaw
 
