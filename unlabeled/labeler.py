@@ -325,12 +325,12 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
 
 def train_ann(train_set_x, yaws, train_set_y, pitches):
     ann_pitch = tf.keras.models.Sequential()
-    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu', input_dim=2))
     ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
     ann_pitch.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
     ann_yaw = tf.keras.models.Sequential()
-    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu'))
+    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu', input_dim=2))
     ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
     ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
