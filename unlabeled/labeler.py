@@ -327,12 +327,12 @@ def train_ann(train_set_x, yaws, train_set_y, pitches):
     ann_pitch = tf.keras.models.Sequential()
     ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu', input_shape=(train_set_y.shape)))
     ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
-    ann_pitch.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    ann_pitch.compile(optimizer='sgd', loss='mse', metrics=[tf.keras.metrics.MeanAbsoluteError()])
 
     ann_yaw = tf.keras.models.Sequential()
     ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu', input_shape=(train_set_x.shape)))
     ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
-    ann_yaw.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    ann_yaw.compile(optimizer='sgd', loss='mse', metrics=[tf.keras.metrics.MeanAbsoluteError()])
 
 
     size_of_batch = len(train_set_x)
