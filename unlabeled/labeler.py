@@ -16,7 +16,7 @@ np.seterr(divide='ignore', invalid='ignore')
 np.set_printoptions(threshold=np.inf)
 
 n_of_epochs = 100
-n_of_neurons = 3
+n_of_neurons = 6
 n_of_output = 1
 
 activation_function_input = 'relu'
@@ -31,7 +31,7 @@ n_of_feature_per_row = 6
 focal_length_pixel = 910.0
 
 video_number = 0
-max_video_number = 4
+max_video_number = 5
 
 # params for ShiTomasi corner detection
 feature_params = dict(maxCorners=0, qualityLevel=0.01, minDistance=15, blockSize=5)
@@ -342,7 +342,7 @@ def train_ann(train_set_x, yaws, train_set_y, pitches):
     ann_yaw.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
 
 
-    size_of_batch = 128#len(train_set_x)
+    size_of_batch = len(train_set_x)
 
     ann_pitch.fit(train_set_y, pitches, batch_size=size_of_batch, epochs=n_of_epochs)
     ann_yaw.fit(train_set_x, yaws, batch_size=size_of_batch, epochs=n_of_epochs)
