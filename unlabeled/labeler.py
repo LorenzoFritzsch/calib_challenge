@@ -19,6 +19,13 @@ n_of_epochs = 100
 n_of_neurons = 3
 n_of_output = 1
 
+activation_function_input = 'relu'
+activation_function_output = 'relu'
+
+optimizer_type = 'sgd'
+loss_type = 'mse'
+metrics_types = [tf.keras.metrics.MeanSquaredError()]
+
 n_of_feature_per_row = 6
 
 focal_length_pixel = 910.0
@@ -325,17 +332,17 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
 
 def train_ann(train_set_x, yaws, train_set_y, pitches):
     ann_pitch = tf.keras.models.Sequential()
-    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu', input_shape=(train_set_y.shape)))
-    ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
-    ann_pitch.compile(optimizer='sgd', loss='mse', metrics=[tf.keras.metrics.MeanAbsoluteError()])
+    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation=activation_function_input, input_shape=(train_set_y.shape)))
+    ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation=activation_function_output))
+    ann_pitch.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
 
     ann_yaw = tf.keras.models.Sequential()
-    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation='relu', input_shape=(train_set_x.shape)))
-    ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation='sigmoid'))
-    ann_yaw.compile(optimizer='sgd', loss='mse', metrics=[tf.keras.metrics.MeanAbsoluteError()])
+    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation=activation_function_input, input_shape=(train_set_x.shape)))
+    ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation=activation_function_output))
+    ann_yaw.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
 
 
-    size_of_batch = len(train_set_x)
+    size_of_batch = 128#len(train_set_x)
 
     ann_pitch.fit(train_set_y, pitches, batch_size=size_of_batch, epochs=n_of_epochs)
     ann_yaw.fit(train_set_x, yaws, batch_size=size_of_batch, epochs=n_of_epochs)
@@ -441,14 +448,29 @@ def train_ann_on_labeled_videos():
     train_set_x = create_train_dataset(x_saved, x_average_all, x_center_image)
     train_set_y = create_train_dataset(y_saved, y_average_all, y_center_image)
 
-    train_set_x = (np.array(train_set_x).reshape(-1, n_of_feature_per_row))
-    train_set_y = (np.array(train_set_y).reshape(-1, n_of_feature_per_row))
+    train_set_x_cleared = []
+    train_set_y_cleared = []
+    yaws_cleared = []
+    pitches_cleared = []
 
-    pitches = np.array(pitches).reshape(-1, 1).astype('float32')
-    yaws = np.array(yaws).reshape(-1, 1).astype('float32')
+    #Remove rows where pitches || yaws are nan
+    for i in range(len(yaws)):
+        yaw = yaws[i][0]
+        pitch = pitches[i]
+        if not math.isnan(yaw) and not math.isnan(pitch):
+            train_set_x_cleared.append(train_set_x[i])
+            train_set_y_cleared.append(train_set_y[i])
+            yaws_cleared.append(yaw)
+            pitches_cleared.append(pitch)
 
 
-    ann_pitch, ann_yaw = train_ann(train_set_x, yaws, train_set_y, pitches)
+    train_set_x_cleared = np.array(train_set_x_cleared).reshape(-1, n_of_feature_per_row)
+    train_set_y_cleared = np.array(train_set_y_cleared).reshape(-1, n_of_feature_per_row)
+
+    pitches_cleared = np.array(pitches_cleared).reshape(-1, 1).astype('float32')
+    yaws_cleared = np.array(yaws_cleared).reshape(-1, 1).astype('float32')
+
+    ann_pitch, ann_yaw = train_ann(train_set_x_cleared, yaws_cleared, train_set_y_cleared, pitches_cleared)
 
     return ann_pitch, ann_yaw
 
