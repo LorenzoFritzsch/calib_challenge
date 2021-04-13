@@ -15,20 +15,21 @@ tf.__version__
 np.seterr(divide='ignore', invalid='ignore')
 np.set_printoptions(threshold=np.inf)
 
-n_of_epochs = 100
-n_of_neurons = 6
+n_of_epochs = 1000
+n_of_neurons = 3
 n_of_output = 1
 
 activation_function_input = 'relu'
-activation_function_output = 'relu'
+activation_function_output = 'linear'
 
-optimizer_type = 'sgd'
-loss_type = 'mse'
+
+optimizer_type = tf.keras.optimizers.SGD(learning_rate=0.1, momentum=0.0, nesterov=False, name="SGD")
+loss_type = tf.keras.losses.MeanSquaredError(reduction="auto", name="mean_squared_error")
 metrics_types = [tf.keras.metrics.MeanSquaredError()]
 
-n_of_feature_per_row = 6
+size_of_batch = 32
 
-focal_length_pixel = 910.0
+n_of_feature_per_row = 6
 
 video_number = 0
 max_video_number = 5
@@ -330,24 +331,15 @@ def get_x_y_per_frame_and_average(dataset_x, dataset_y):
     return x_per_frame, x_all_average, y_per_frame, y_all_average
 
 
-def train_ann(train_set_x, yaws, train_set_y, pitches):
-    ann_pitch = tf.keras.models.Sequential()
-    ann_pitch.add(tf.keras.layers.Dense(units=n_of_neurons, activation=activation_function_input, input_shape=(train_set_y.shape)))
-    ann_pitch.add(tf.keras.layers.Dense(units=n_of_output, activation=activation_function_output))
-    ann_pitch.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
+def train_ann(train_set_complete, desired_output):
+    ann = tf.keras.models.Sequential()
+    ann.add(tf.keras.layers.Dense(units=n_of_neurons, activation=activation_function_input, input_shape=(train_set_complete.shape)))
+    ann.add(tf.keras.layers.Dense(units=n_of_output, activation=activation_function_output))
+    ann.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
 
-    ann_yaw = tf.keras.models.Sequential()
-    ann_yaw.add(tf.keras.layers.Dense(units=n_of_neurons, activation=activation_function_input, input_shape=(train_set_x.shape)))
-    ann_yaw.add(tf.keras.layers.Dense(units=n_of_output, activation=activation_function_output))
-    ann_yaw.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
+    ann.fit(train_set_complete, desired_output, batch_size=size_of_batch, epochs=n_of_epochs)
 
-
-    size_of_batch = len(train_set_x)
-
-    ann_pitch.fit(train_set_y, pitches, batch_size=size_of_batch, epochs=n_of_epochs)
-    ann_yaw.fit(train_set_x, yaws, batch_size=size_of_batch, epochs=n_of_epochs)
-
-    return ann_pitch, ann_yaw
+    return ann
 
 
 def get_x_y_dataset_from_dict(dict_frames):
@@ -397,6 +389,7 @@ def get_good_vals_from(x_local, y_local):
 
 def train_ann_on_labeled_videos():
 
+    """
     n_of_labeled_videos = 4
     width = 0
     height = 0
@@ -448,31 +441,33 @@ def train_ann_on_labeled_videos():
     train_set_x = create_train_dataset(x_saved, x_average_all, x_center_image)
     train_set_y = create_train_dataset(y_saved, y_average_all, y_center_image)
 
-    train_set_x_cleared = []
-    train_set_y_cleared = []
-    yaws_cleared = []
-    pitches_cleared = []
+    train_set_cleared = []
+    yaws_pitches_cleared = []
 
-    #Remove rows where pitches || yaws are nan
+    # Remove rows where pitches || yaws are nan
     for i in range(len(yaws)):
         yaw = yaws[i][0]
         pitch = pitches[i]
         if not math.isnan(yaw) and not math.isnan(pitch):
-            train_set_x_cleared.append(train_set_x[i])
-            train_set_y_cleared.append(train_set_y[i])
-            yaws_cleared.append(yaw)
-            pitches_cleared.append(pitch)
+            train_set_cleared.append(train_set_x[i])
+            train_set_cleared.append(train_set_y[i])
+            yaws_pitches_cleared.append(yaw)
+            yaws_pitches_cleared.append(pitch)
 
+    train_set_cleared = np.array(train_set_cleared).reshape(-1, n_of_feature_per_row)
 
-    train_set_x_cleared = np.array(train_set_x_cleared).reshape(-1, n_of_feature_per_row)
-    train_set_y_cleared = np.array(train_set_y_cleared).reshape(-1, n_of_feature_per_row)
+    yaws_pitches_cleared = np.array(yaws_pitches_cleared).reshape(-1, 1).astype('float32')
 
-    pitches_cleared = np.array(pitches_cleared).reshape(-1, 1).astype('float32')
-    yaws_cleared = np.array(yaws_cleared).reshape(-1, 1).astype('float32')
+    np.save('train_set_in_stat.npy', train_set_cleared)
 
-    ann_pitch, ann_yaw = train_ann(train_set_x_cleared, yaws_cleared, train_set_y_cleared, pitches_cleared)
+    np.save('yaws_pitches_in_stat.npy', yaws_pitches_cleared)
+    """
+    train_set_cleared = np.load('train_set_with_focus_and_center.npy')
+    yaws_pitches_cleared = np.load('yaws_pitches_with_focus_and_center.npy')
+    #"""
+    ann = train_ann(train_set_cleared, yaws_pitches_cleared)
 
-    return ann_pitch, ann_yaw
+    return ann
 
 
 def get_center_of_direction_for_each_frame(video_captured, video_number):
@@ -569,9 +564,11 @@ def get_center_of_direction_for_each_frame(video_captured, video_number):
 class Labeler:
 
     # Train ANN
-    ann_pitch, ann_yaw = train_ann_on_labeled_videos()
+    ann = train_ann_on_labeled_videos()
 
     for video_number in range(max_video_number):
+
+        print("Video: " + str(video_number))
 
         video_captured = cv2.VideoCapture('../labeled/'+str(video_number)+'.hevc')
 
@@ -620,8 +617,8 @@ class Labeler:
             calculated_pitch = calculate_ang(y_calc, y_center_image, 910.0)
             calculated_yaw = calculate_ang(x_calc, x_center_image, 910.0)
 
-            predicted_pitch = ann_pitch.predict(np.array([y_calc, minimums_y_avg, distance_x, calculated_pitch, 910.0, y_center_image]).reshape(1, n_of_feature_per_row))
-            predicted_yaw = ann_yaw.predict(np.array([x_calc, minimums_x_avg, distance_y, calculated_yaw, 910.0, x_center_image]).reshape(1, n_of_feature_per_row))
+            predicted_pitch = ann.predict(np.array([y_calc, minimums_y_avg, distance_y, calculated_pitch, 910.0, y_center_image]).reshape(1, n_of_feature_per_row))
+            predicted_yaw = ann.predict(np.array([x_calc, minimums_x_avg, distance_x, calculated_yaw, 910.0, x_center_image]).reshape(1, n_of_feature_per_row))
 
             pitch_yaw_predicted.append([predicted_pitch, predicted_yaw])
 
