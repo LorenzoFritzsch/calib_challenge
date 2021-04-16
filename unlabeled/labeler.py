@@ -9,6 +9,8 @@ from sklearn.metrics import silhouette_score
 from sklearn.cluster import AgglomerativeClustering
 import tensorflow as tf
 
+from keras.callbacks import EarlyStopping
+
 tf.__version__
 
 
@@ -26,6 +28,10 @@ activation_function_output = 'linear'
 optimizer_type = tf.keras.optimizers.SGD(learning_rate=0.1, momentum=0.0, nesterov=False, name="SGD")
 loss_type = tf.keras.losses.MeanSquaredError(reduction="auto", name="mean_squared_error")
 metrics_types = [tf.keras.metrics.MeanSquaredError()]
+
+earlyStopping = tf.keras.callbacks.EarlyStopping(monitor="mean_squared_error", min_delta=0, patience=100, verbose=1, mode="min", baseline=None, restore_best_weights=True)
+callbacks = [earlyStopping]
+
 
 size_of_batch = 32
 
@@ -336,8 +342,8 @@ def train_ann(train_set_complete, desired_output):
     ann.add(tf.keras.layers.Dense(units=n_of_neurons, activation=activation_function_input, input_shape=(train_set_complete.shape)))
     ann.add(tf.keras.layers.Dense(units=n_of_output, activation=activation_function_output))
     ann.compile(optimizer=optimizer_type, loss=loss_type, metrics=metrics_types)
-
-    ann.fit(train_set_complete, desired_output, batch_size=size_of_batch, epochs=n_of_epochs)
+    
+    ann.fit(train_set_complete, desired_output, batch_size=size_of_batch, epochs=n_of_epochs, callbacks=callbacks)
 
     return ann
 
